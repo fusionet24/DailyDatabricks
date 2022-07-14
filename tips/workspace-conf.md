@@ -53,7 +53,7 @@ You must use **PATCH** not POST or PUT!
 | Verbose Audit Logs:                                     | Enable or disable verbose audit logs.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | enableVerboseAuditLogs                           |                                                                                                                                                                                                                      |                                                                    |
   
   
-  ###Sample request
+  ### Sample request
   
   ```curl --location --request PATCH 'https://<workspace>.azuredatabricks.net/api/2.0/workspace-conf' \
 --header 'Authorization: Bearer <PAT TOKEN>' \
