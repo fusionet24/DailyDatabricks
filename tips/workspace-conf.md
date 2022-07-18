@@ -55,12 +55,18 @@ You must use **PATCH** not POST or PUT!
   
   ### Sample request
   
+    
+![image](https://user-images.githubusercontent.com/315909/179108880-333b0b98-76ca-4c4a-ac3c-5beba9d2b476.png)
+
+![image](https://user-images.githubusercontent.com/315909/179105176-048e91aa-3151-4453-b30e-6fc6fe62f4f4.png)
+  
+  
   ```curl --location --request PATCH 'https://<workspace>.azuredatabricks.net/api/2.0/workspace-conf' \
 --header 'Authorization: Bearer <PAT TOKEN>' \
 --header 'Content-Type: application/json' \
 --data-raw '{"enforceWorkspaceViewAcls":"true"}'```
   
-![image](https://user-images.githubusercontent.com/315909/179108880-333b0b98-76ca-4c4a-ac3c-5beba9d2b476.png)
 
-![image](https://user-images.githubusercontent.com/315909/179105176-048e91aa-3151-4453-b30e-6fc6fe62f4f4.png)
+  
+
 
