@@ -76,8 +76,22 @@ If you paste this Markdown into a platform that supports it (like
   ```curl --location --request PATCH 'https://<workspace>.azuredatabricks.net/api/2.0/workspace-conf' \
 --header 'Authorization: Bearer <PAT TOKEN>' \
 --header 'Content-Type: application/json' \
---data-raw '{"enforceWorkspaceViewAcls":"true"}'```
-  
+--data-raw '{"enforceWorkspaceViewAcls":"true"}'
+```
+
+## Using Terraform
+You may use Terraform as your IaC approach. The [Offical databricks provider](https://registry.terraform.io/providers/databricks/databricks/latest) has a [workspace_conf resource](https://registry.terraform.io/providers/databricks/databricks/latest/docs/resources/workspace_conf) where you can specfify the above parameters.
+
+
+```
+resource "databricks_workspace_conf" "this" {
+  custom_config = {
+    "enableIpAccessLists" : true,
+     "enableWebTerminal" : true,
+     	"enableJobsEmailsV2": true
+  }
+}
+```
 
   
 
