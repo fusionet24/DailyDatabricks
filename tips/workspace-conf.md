@@ -1,7 +1,11 @@
-# Workspace Conf API
+# Databricks Workspace Conf API
 
 ## Introduction
-Databricks has an api that allows you to configure your workspace features. Sadly these properties appear to not be documented anywhere offically.
+Databricks has an api that allows you to configure your workspace features. So that you don't have to login into your workspace admin control panel and manually edit them. 
+
+Sadly these properties appear to not be documented anywhere offically.
+
+
 Below is my rough  mapping out of these features, along with how to use this API called Workspace-conf. Please do feel free to add to the list.
 
 
@@ -16,7 +20,8 @@ You must use **PATCH** not POST or PUT!
   
 ## Databricks Workspace features you can configure via this API
 
-  ![image](https://user-images.githubusercontent.com/315909/179099771-806b30dc-63d5-46ae-bfb0-28abbbfafb3e.png)
+  ![image](https://github.com/fusionet24/DailyDatabricks/assets/315909/7cc9ebd5-069a-4144-bfcd-8e7de1edb160)
+
 
  
   
@@ -51,6 +56,13 @@ You must use **PATCH** not POST or PUT!
 | RStudio Home Directory:                                 | This value sets the default base directory for RStudio Server users' home in the form of absolute unix path. This configuration applies to all clusters running RStudio Server under the workspace.<br><br>Any existing directory can be used as the base for home directories. If the directory does not exist, it will be created upon the first user login.<br><br>After updating this configuration, existing clusters with RStudio Server users must be restarted to use the updated home director                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | rStudioUserDefaultHomeBase                       | : "/SCOTT"                                                                                                                                                                                                           |                                                                    |
 | Store Interactive Notebook Results in Customer Account: | When enabled, all interactive notebook results are stored in the customer account.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | storeInteractiveNotebookResultsInCustomerAccount |                                                                                                                                                                                                                      |                                                                    |
 | Verbose Audit Logs:                                     | Enable or disable verbose audit logs.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | enableVerboseAuditLogs                           |                                                                                                                                                                                                                      |                                                                    |
+| Enforce User Isolation                        |             | enforceUserIsolation                                      |         |                       |
+| New template for Jobs Email Notifications     |             | enableJobsEmailsV2                                        |         |                       |
+| Allow Repos to Export IPYNB outputs           |             | reposIpynbResultsExportPermissions                        |         |                       |
+| Increased number of jobs                      |             | {jobsListBackendPaginationEnabled: "true", jobsListBackendPaginationOptOut: "false"} |         |                       |
+| FileStore Endpoint                            |             | enableFileStoreEndpoint                                   |         |                       |
+
+If you paste this Markdown into a platform that supports it (like 
   
   
   ### Sample request
