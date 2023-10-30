@@ -1,0 +1,22 @@
+---
+title: "<POST TITLE>"
+description: "Post Description"
+date-modified: "5/23/2021"
+draft: true
+categories: [news, code, analysis]
+---
+
+::: {.callout-tip title="Begineer Tip" appearance="simple"}
+This tip is part of the [basic tips series](http://dailydatabricks.tips/#tag=basic) to level up your work with high impact, low effort changes.
+:::
+
+
+## Summary
+
+
+
+##Tweet
+
+
+## References & Further Reading
+

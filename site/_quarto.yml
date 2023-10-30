@@ -1,0 +1,68 @@
+project:
+  type: website
+
+website:
+  title: "DailyDatabricks Tips"
+  site-url: "DailyDatabricks.Tips"
+  description: "Explore DailyDatabricks for a treasure trove of resources packed with insightful tips, tricks, and innovative hacks surrounding Databricks. Whether you're a beginner looking to navigate through Databricks, or a seasoned professional keen on enhancing your data engineering skills, DailyDatabricks is your go-to resource. Discover actionable advice, learn from real-world examples, and stay updated on the latest Databricks features and updates to streamline your data analytics journey"
+  favicon: logo.jpg
+  twitter-card:
+    creator: "@fusionet24"
+    site: "@dailydatabricks"
+  open-graph: true
+  margin-header: subscribe.html
+  sidebar:
+    logo: logo.jpg
+    border: true
+    pinned: true
+    tools:
+      - icon: rss
+        href: index.xml
+      - icon: github
+        menu:
+          - text: Source Code
+            url:  https://code.com
+          - text: Report a Bug
+            url:  https://bugs.com
+    contents:
+        - href: index.qmd
+          text: Home
+        - about.qmd
+        - href: "https://twitter.com/dailydatabricks"
+          text: Twitter
+          contents: "tips/"
+          
+        - text: "---"
+        - section: "Tutorials"
+          contents:
+            - href: document4.qmd
+            - href: document5.qmd
+            - href: document6.qmd
+        - section: "NewsLetter"
+          contents:
+            - href: subscribe.html
+  
+    style: "floating"
+    
+
+  search: 
+    location: sidebar
+    type: overlay
+    copy-button: true
+  page-navigation: true
+  back-to-top-navigation: true
+  reader-mode: true
+  page-footer: "Copyright 2023 RapidData LTD" 
+  repo-url: https://github.com/fusionet24/dailydatabricks
+  repo-actions: [edit, issue]
+  repo-subdir: website
+format:
+  html:
+    theme:
+      light: flatly
+      dark: darkly
+    css: styles.css
+    toc: true
+
+editor: visual
+

@@ -1,0 +1,20 @@
+---
+title: "Databricks Tips, Tricks and Hacks"
+listing:
+  id: tip-listing
+  contents: tips
+  categories: true
+  type: table
+  sort: "date"
+  feed: true
+  field-display-names:
+    title: "Tip"
+  fields: [image, title, description,categories,reading-time]
+  sort-ui: [title, reading-time]
+  filter-ui: false
+---
+
+Welcome to our website.
+
+:::{#tip-listing}
+:::
