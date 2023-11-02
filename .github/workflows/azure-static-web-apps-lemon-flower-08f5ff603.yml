@@ -1,24 +1,48 @@
-name: Azure Static Web Apps CI/CD
+name: Validate Site and Deploy
 
 on:
   push:
     branches:
       - main
+      - feature/*
   pull_request:
-    types: [opened, synchronize, reopened, closed]
+    types: [closed]
     branches:
       - main
 
 jobs:
-  build_and_deploy_job:
-    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed')
+  render_site:
     runs-on: ubuntu-latest
-    name: Build and Deploy Job
     steps:
-      - uses: actions/checkout@v3
+    - uses: actions/checkout@v2
+    - name: Install GDebi first
+      run: sudo apt-get install gdebi-core
+    - name: Download the deb file
+      run: sudo curl -LO https://quarto.org/download/latest/quarto-linux-amd64.deb 
+    - name: Install the deb file
+      run: sudo apt-get install -y ./quarto-linux-amd64.deb
+    - name: Verify Install
+      run: /usr/local/bin/quarto check
+    - name: change working directory to site folder
+      run: cd site
+    - name: render site
+      run: quarto render
+    - name: Output folder directories
+      run: ls
+    - name: Upload _site directory for deploy job
+      uses: actions/upload-artifact@v1
+      with:
+          name: site_deployment
+          path: _site
+  deploy_to_azure_static_webapp:
+    needs: render_site
+    if: success() && github.event.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    name: Deploy to Azure App Service
+    steps:
+      - uses: actions/download-artifact@v2
         with:
-          submodules: true
-          lfs: false
+          name: site_deployment
       - name: Build And Deploy
         id: builddeploy
         uses: Azure/static-web-apps-deploy@v1
@@ -29,18 +53,5 @@ jobs:
           ###### Repository/Build Configurations - These values can be configured to match your app requirements. ######
           # For more information regarding Static Web App workflow configurations, please visit: https://aka.ms/swaworkflowconfig
           app_location: "/" # App source code path
-          api_location: "" # Api source code path - optional
-          output_location: "" # Built app content directory - optional
+          output_location: "public" # Built app content directory - optional
           ###### End of Repository/Build Configurations ######
-
-  close_pull_request_job:
-    if: github.event_name == 'pull_request' && github.event.action == 'closed'
-    runs-on: ubuntu-latest
-    name: Close Pull Request Job
-    steps:
-      - name: Close Pull Request
-        id: closepullrequest
-        uses: Azure/static-web-apps-deploy@v1
-        with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_LEMON_FLOWER_08F5FF603 }}
-          action: "close"
