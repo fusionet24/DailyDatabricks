@@ -23,10 +23,8 @@ jobs:
       run: sudo apt-get install -y ./quarto-linux-amd64.deb
     - name: Verify Install
       run: /usr/local/bin/quarto check
-    - name: change working directory to site folder
-      run: cd site
-    - name: render site
-      run: quarto render
+    - name: render site 
+      run: quarto render site/
     - name: Output folder directories
       run: ls
     - name: Upload _site directory for deploy job
