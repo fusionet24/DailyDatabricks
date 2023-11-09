@@ -9,12 +9,12 @@ listing:
   feed: true
   field-display-names:
     title: "Tip"
-  fields: [image, title, description,categories,reading-time]
+  fields: [image, title, description]
   sort-ui: [title, reading-time]
   filter-ui: false
 ---
 
 Welcome to our website.
 
-:::{#tip-listing}
+::: {#tip-listing}
 :::
