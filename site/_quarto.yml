@@ -21,9 +21,9 @@ website:
       - icon: github
         menu:
           - text: Source Code
-            url:  https://code.com
+            url:  https://github.com/fusionet24/dailydatabricks
           - text: Report a Bug
-            url:  https://bugs.com
+            url:  https://github.com/fusionet24/DailyDatabricks/issues
     contents:
         - href: index.qmd
           text: Home
@@ -55,7 +55,7 @@ website:
   page-footer: "Copyright 2023 RapidData LTD" 
   repo-url: https://github.com/fusionet24/dailydatabricks
   repo-actions: [edit, issue]
-  repo-subdir: website
+  repo-subdir: site
 format:
   html:
     theme:
