@@ -56,6 +56,7 @@ The `INVALID_STATE.RESTORATION_PERIOD_EXPIRED` error occurs under the following 
 ## Troubleshooting Steps
 
 To effectively resolve the `INVALID_STATE.RESTORATION_PERIOD_EXPIRED` error, follow these detailed steps:
+
 1. Verify the Restoration Window
 
 First, ensure that the table was dropped within the last 7 days. If the table was dropped earlier, it cannot be recovered using the UNDROP command.
