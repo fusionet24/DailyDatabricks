@@ -1,6 +1,6 @@
 ---
-title: "INVALID_STATE.RESTORATION_PERIOD_EXPIRED"
-subtitle: ""
+title: "Undropping Managed Tables"
+subtitle: "INVALID_STATE.RESTORATION_PERIOD_EXPIRED"
 description: "Learn how to address the INVALID_STATE.RESTORATION_PERIOD_EXPIRED error in Databricks SQL when attempting to undrop a table within the 7-day restoration period. Discover techniques using SHOW TABLES DROPPED and table IDs to troubleshoot and resolve table restoration issues in your Unity Catalog environment."
 date-modified: "05/14/2023"
 date-format: "DD/MM/YYYY"
