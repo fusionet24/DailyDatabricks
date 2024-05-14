@@ -10,6 +10,8 @@ toc:  true
 toc-title: Navigation
 tags: 
   - python
+  - Scala
+  - R
   - spark
   - basic
 ---
@@ -250,3 +252,7 @@ Benefits of Accessing Notebook Context: Accessing the Notebook Context can serve
 ```{=html}
 <script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
 ```
+
+### Links
+
+[Retriving child notebooks context objects](https://stackoverflow.com/questions/69158343/how-to-get-databricks-notebook-context-of-child-notebook)
