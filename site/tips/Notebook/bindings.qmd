@@ -1,5 +1,4 @@
 ---
-
 title: "Retrieving Notebook Bindings Dynamically"
 subtitle: "Fetching Run Parameters"
 description: "Learn how to retrieve run parameters. Understand the use of Databricks widgets and dynamically getting the notebook bindings for effective parameter handling."
@@ -14,14 +13,14 @@ tags:
   - widgets
   - job parameters
   - dbutils
-  - notebook bindings
   - run parameters
   - RunID
-  - jobId
   - dynamic parameter fetching
 
 ---
+
 ::: {.callout-note title="Learn More" appearance="simple"}
+
 Learn More about Notebooks and [Context Objects](context.qmd)
 :::
 # Summary
