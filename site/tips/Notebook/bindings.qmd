@@ -61,8 +61,11 @@ The `getCurrentBindings()` method can also retrieve any active widget values for
 
 ### When to Use Dynamic Bindings
 Dynamic bindings are particularly useful in the following scenarios:
+
 - **Scheduled Jobs**: When notebooks are run as scheduled jobs, dynamically fetching parameters ensures that the notebook uses the correct configuration.
+  
 - **Environment Configuration**: Adjusting configurations based on the environment (development, staging, production) can be streamlined by dynamically fetching parameters.
+  
 - **Reusable Notebooks**: Creating reusable notebooks that adapt to different inputs without manual intervention enhances productivity and reduces errors.
 
 
