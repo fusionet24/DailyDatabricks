@@ -30,6 +30,8 @@ website:
         - about.qmd
         - href: "https://twitter.com/dailydatabricks"
           text: Twitter
+        - href: "https://bsky.app/profile/dailydatabricks.tips"
+          text: Bluesky
           contents: "tips/"
           
         - text: "---"

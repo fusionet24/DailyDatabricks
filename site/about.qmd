@@ -7,6 +7,9 @@ about:
     - icon: twitter
       text: Twitter
       href: https://twitter.com/fusionet24
+    - icon: bluesky
+      text: Bluesky
+      href: https://bsky.app/profile/fusionet24.com
     - icon: linkedin
       text: LinkedIn
       href: https://linkedin.com/scottjamesbell
@@ -15,20 +18,19 @@ about:
       href: https://github.com/fusionet24
     - icon: envelope-at
       text: Email Me
-      href: dailydatabricks@scottajamesbell.com
-      
+      href: dailydatabricks@scottjamesbell.com
 ---
+
 ### About this site
 
-- Provide a central resource of Small actionable pieces of information 
-- Document the Undocumented 
-- Allow me to Implement D-R-Y (Do not repeat yourself) IRL
+-   Provide a central resource of Small actionable pieces of information
+-   Document the Undocumented
+-   Allow me to Implement D-R-Y (Do not repeat yourself) IRL
 
 A place to learn new and wonderful hacks! 🤠
 
 ### Who Runs it?
 
-This site is run by Scott Bell who is currently a Principal Consultant at RapidData LTD and a Contractor for [Advancing Analytics](https://www.advancinganalytics.co.uk/). Previously he was the UK&I Databricks SME at Avanade. His background is Data Engineering, Architecture and Data Science.
+This site is run by Scott Bell who is currently a Principal Consultant at RapidData LTD. Previously he was the UK&I Databricks SME at Avanade. His background is Data Engineering, Architecture and Data Science.
 
 I write a few other places, [My Year In Data](https://www.myyearindata.com) and my [codementor blog](https://www.codementor.io/@fusionet24/create-your-own-magic-commands-in-databricks-1w8y1pdpqe)
-

@@ -61,10 +61,12 @@ SET spark.databricks.delta.commitInfo.userMetadata = 'Global session metadata - 
 ## R
 
 ```r
-sparkR.conf.set(
-    "spark.databricks.delta.commitInfo.userMetadata",
-    "Global session metadata - Data processed by ETL pipeline v2.1"
-)
+library(SparkR)
+sparkR.session()
+sparkR.session(sparkConfig = list("spark.databricks.delta.commitInfo.userMetadata" =
+    "Global session metadata - Data processed by ETL pipeline v2.3"))
+
+
 ```
 :::
 
@@ -73,6 +75,9 @@ sparkR.conf.set(
 ### 1. Data Pipeline Tracking
 
 ```python
+from datetime import datetime
+import json
+
 pipeline_metadata = {
     "pipeline_id": "ETL_123",
     "source_system": "CRM",
@@ -140,15 +145,6 @@ The simplest way is to use native SQL:
 -- View complete history with metadata
 DESCRIBE HISTORY my_delta_table;
 
--- Filter for specific operations and metadata
-DESCRIBE HISTORY my_delta_table
-WHERE operation = 'WRITE' 
-  AND userMetadata IS NOT NULL;
-
--- Focus on recent changes with metadata
-DESCRIBE HISTORY my_delta_table
-WHERE version > (SELECT max(version) - 10 FROM (DESCRIBE HISTORY my_delta_table))
-ORDER BY version DESC;
 ```
 
 ## Python DeltaTable API

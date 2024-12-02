@@ -1,5 +1,5 @@
 ---
-title: "Supercharge Your Databricks Notebooks with IPython Events"
+title: "IPython Events"
 description: "Learn how to implement smart logging, automated DataFrame validation, and cross-language monitoring in Databricks using IPython events. Perfect for data engineers looking to next level capabilities to their notebooks."
 date: "12/01/2024"
 date-format: "DD/MM/YYYY"
