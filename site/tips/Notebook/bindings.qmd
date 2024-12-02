@@ -5,7 +5,6 @@ description: "Learn how to retrieve run parameters. Understand the use of Databr
 date-modified: "05/14/2024"
 date-format: "DD/MM/YYYY"
 categories: [notebooks, job parameters]
-image: Assets/notebook-context.png
 toc: true
 toc-title: Navigation
 tags: 

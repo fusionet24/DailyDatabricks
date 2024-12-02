@@ -1,0 +1,74 @@
+---
+title: "Databricks Managed Identity"
+subtitle: "Unoffical Databricks "
+description: "Learn how to retrieve run parameters. Understand the use of Databricks widgets and dynamically getting the notebook bindings for effective parameter handling."
+date-modified: "07/14/2024"
+date-format: "DD/MM/YYYY"
+categories: [managedidentity]
+image: Assets/notebook-context.png
+toc: true
+toc-title: Navigation
+tags: 
+  - databricks
+  - managedidentiy
+  - identity
+  - azure
+  - security
+  - hack
+draft: true
+---
+
+## Understanding Databricks Managed Identity
+
+Azure Databricks workspaces come with a built-in Managed Identity, located in the workspace's managed resource group. This identity, named `dbmanagedidentity`, facilitates secure, passwordless authentication to various Azure services. However, it is not 
+
+## Key Benefits
+
+- Eliminates credential management
+- Enhances security
+- Simplifies access control
+
+## Connecting to Azure Services
+
+Use the following code snippet to access the Managed Identity in your Databricks notebook:
+
+```python
+from azure.identity import ManagedIdentityCredential
+
+credential = ManagedIdentityCredential()
+```
+
+## Azure Service Integration Examples
+
+1. **Azure Key Vault**:
+   ```python
+   from azure.keyvault.secrets import SecretClient
+   secret_client = SecretClient(vault_url="https://your-vault.vault.azure.net/", credential=credential)
+   secret = secret_client.get_secret("your-secret-name")
+   ```
+
+2. **Azure Storage**:
+   ```python
+   from azure.storage.blob import BlobServiceClient
+   blob_service_client = BlobServiceClient(account_url="https://your-account.blob.core.windows.net", credential=credential)
+   ```
+
+3. **Azure SQL Database**:
+   ```python
+   import pyodbc
+   conn = pyodbc.connect('Driver={ODBC Driver 17 for SQL Server};Server=your-server.database.windows.net;Database=your-database', authentication=pyodbc.ConnectAttr.SQL_COPT_SS_AUTH_ACCESS_TOKEN, user=credential.get_token("https://database.windows.net/.default").token)
+   ```
+
+4. **Azure Cosmos DB**:
+   ```python
+   from azure.cosmos import CosmosClient
+   client = CosmosClient("https://your-account.documents.azure.com:443/", credential=credential)
+   ```
+
+5. **Azure Event Hubs**:
+   ```python
+   from azure.eventhub import EventHubProducerClient
+   producer = EventHubProducerClient("your-event-hub-namespace.servicebus.windows.net", "your-event-hub", credential=credential)
+   ```
+
+By leveraging the Databricks Managed Identity, you can securely connect to various Azure services without managing separate credentials, enhancing both security and ease of use in your data processing workflows.
