@@ -28,7 +28,7 @@ jobs:
     - name: Output folder directories
       run: ls
     - name: Upload _site directory for deploy job
-      uses: actions/upload-artifact@v1
+      uses: actions/upload-artifact@v4
       with:
           name: site_deployment
           path: site/_site
@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Deploy to Azure App Service
     steps:
-      - uses: actions/download-artifact@v2
+      - uses: actions/download-artifact@v4
         with:
           name: site_deployment
       - name: Build And Deploy
