@@ -1,0 +1,85 @@
+---
+title: "Reusable Window Functions"
+description: "Learn how to define and reuse window specifications across multiple window functions using named windows in Databricks SQL and PySpark."
+date-modified: "12/03/2024"
+date-format: "DD/MM/YYYY"
+categories: [deltalake,Decembricks]
+#image: Assets/delta-metadata.png
+toc: true
+toc-title: Navigation
+tags:
+    - databricks
+    - deltalake
+    - metadata
+    - governance
+    - datalineage
+    - tips
+    - day3
+draft: False
+---
+
+## Summary 
+
+* Named window specifications allow you to define a window once and reference it in multiple window functions
+* This improves code readability and reduces duplication when using the same window definition repeatedly
+* Supported in both Databricks SQL and PySpark DataFrame API
+
+
+## Detail
+Window functions are a powerful tool for performing calculations across a set of rows related to the current row. However, when you need to apply the same window definition to multiple functions, the query can quickly become verbose and hard to read. 
+
+Named window specifications solve this by allowing you to declare the window spec once and reference it by name. Here's how it works:
+
+::: panel-tabset
+
+## Databricks SQL
+
+### Syntax: 
+
+```sql
+WINDOW { window_name AS window_spec } [, ...]
+```
+
+Where:
+
+- `window_name` is an identifier to reference the window spec 
+- `window_spec` is the window definition to share across functions
+
+
+### Example:
+```sql
+SELECT product, 
+       SUM(sales) OVER monthly_window AS monthly_sales,
+       AVG(sales) OVER monthly_window AS avg_monthly_sales
+FROM sales_data
+WINDOW monthly_window AS (PARTITION BY product ORDER BY date)
+```
+
+## PySpark
+
+```python 
+from pyspark.sql import Window
+from pyspark.sql.functions import *
+
+window = Window.partitionBy("product").orderBy("date")
+
+sales_data = sales_data.select(
+    "product",
+    sum("sales").over(window).alias("monthly_sales"),
+    avg("sales").over(window).alias("avg_monthly_sales")
+)
+```
+
+:::
+
+
+## Benefits 
+::: {.callout-tip title="Why use named windows?" appearance="simple"}
+* Makes queries with multiple window functions more concise and readable
+* Allows easy reuse of complex window definitions 
+* Helps avoid errors from repeating the same window spec multiple times
+:::
+
+## Further Reading
+- [Databricks SQL - SELECT Named Window](https://docs.databricks.com/sql/language-manual/sql-ref-syntax-qry-select-named-window.html) 
+- [PySpark Window Functions](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.Window.html)
