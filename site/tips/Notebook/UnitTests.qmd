@@ -14,17 +14,20 @@ tags:
   - notebook
   - Spark
   - dataframes
+  - Decembricks
 ---
-::: {.callout-note title="Beginner Friendly" appearance="simple"}
-This post is part of our series on making Spark development easier and more efficient, especially for those new to the platform.
+
+::: {.callout-note title="Beginner Tip" appearance="simple"}
+This tip is part of the [Decembricks 2024 series](../../#category=Decembricks) to teach a new tip everyday of december.
 :::
 
 # Summary
+
 - **Dynamic Test Case Discovery**: Automatically loads test cases from the current notebook module.
 - **Reflection Magic**: Uses reflection to introspect classes, searching for `unittest.TestCase` subclasses.
 - **Test Suite Management**: Organizes tests into a suite for easier management.
 
-# Code
+# Code 
 
 ## Load All Test Classes from the Current Notebook
 
@@ -35,29 +38,40 @@ import unittest
 def load_test_classes_from_notebook():
     suite = unittest.TestSuite()
     current_module = sys.modules[__name__]
-
+    
     for name in dir(current_module):
         obj = getattr(current_module, name)
         if isinstance(obj, type) and issubclass(obj, unittest.TestCase) and obj is not unittest.TestCase:
             suite.addTests(unittest.TestLoader().loadTestsFromTestCase(obj))
-
+            
     return suite
+
+
+suite = load_test_classes_from_notebook()
+runner = unittest.TextTestRunner(verbosity=2)
+runner.run(suite)
 ```
+
 ### Example Code & Tests
 
 #### Example Methods to Test
+
 These are some sample functions in python that we will use to illustrate how unit tests work
+
 ```python
 def add(a, b):
     """Perform addition of two numeric values."""
     return a + b
 
-def multiply(a, b):
+def multiply(a, b):  
     """Perform multiplication of two numeric values."""
     return a * b
 ```
+
 #### Example Unit Test Cases
+
 These are sample Unit Test Cases
+
 ```python
 import unittest
 
@@ -65,15 +79,15 @@ class TestGenericMathOperations(unittest.TestCase):
     def test_addition(self):
         # Test with numeric values
         self.assertEqual(add(2, 3), 5, "Addition of 2 and 3 should equal 5")
-        self.assertEqual(add(-1, 5), 4, "Addition of -1 and 5 should equal 4")
+        self.assertEqual(add(-1, 5), 4, "Addition of -1 and 5 should equal 4") 
         self.assertAlmostEqual(add(0.1, 0.2), 0.3, places=1, msg="Addition of 0.1 and 0.2 should approximate 0.3")
         
         # Test with an invalid case
         with self.assertRaises(TypeError, msg="Adding a number and a string should raise a TypeError"):
             add(5, "hello")
-
+            
     def test_multiplication(self):
-        # Test with numeric values
+        # Test with numeric values  
         self.assertEqual(multiply(2, 3), 6, "Multiplication of 2 and 3 should equal 6")
         self.assertEqual(multiply(-2, 4), -8, "Multiplication of -2 and 4 should equal -8")
         self.assertAlmostEqual(multiply(0.5, 0.4), 0.2, places=1, msg="Multiplying 0.5 and 0.4 should approximate 0.2")
@@ -82,8 +96,6 @@ class TestGenericMathOperations(unittest.TestCase):
         with self.assertRaises(TypeError, msg="Multiplying a number and a string should raise a TypeError"):
             multiply(3, "world")
 ```
-
-
 
 # Details
 
@@ -94,7 +106,7 @@ In the spirit of enabling flexible test discovery, this snippet takes advantage 
 2. **Current Module Context**: Accessing `sys.modules[__name__]` grants a reference to the currently running module, a key tool for reflection.
 
 3. **Reflection and Filtering**:
-   - The `dir` function retrieves all objects in the module.
+   - The `dir` function retrieves all objects in the module.  
    - `getattr` allows accessing the object itself by name.
    - We then ensure the object is a subclass of `unittest.TestCase` but not the base class itself.
 
@@ -104,19 +116,17 @@ In the spirit of enabling flexible test discovery, this snippet takes advantage 
 
 - **Automation and Flexibility**: Automatically loading tests simplifies running new tests without manual suite updates.
 - **Dynamic Testing**: Great for scenarios where test classes change frequently or are dynamically generated.
-
+  
 # Cautions
 
 - **Over-Discovery**: This method could inadvertently load experimental or partial test classes, leading to unintended test runs.
-- **Opaque Testing**: The reliance on reflection makes the test suite implicit and less readable. Reviewers may struggle to understand the source of loaded tests.
+- **Opaque Testing**: The reliance on reflection makes the test suite implicit and less readable. Reviewers may struggle to understand the source of loaded tests. 
 - **Performance**: The reflective lookup over the entire module can be inefficient, especially in larger projects.
 
-
 # References & Further Reading
+
 ### Related Tweets
 
 ### Links
 
 - [unittest Documentation](https://docs.python.org/3/library/unittest.html): Learn more about Python's built-in testing framework.
-
-
