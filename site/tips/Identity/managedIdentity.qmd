@@ -74,12 +74,18 @@ credential = ManagedIdentityCredential()
    blob_service_client = BlobServiceClient(account_url="https://your-account.blob.core.windows.net", credential=credential)
    ```
 
-3. **Azure SQL Database**:
+3. **Azure Cosmos Database**:
    ```python
-   import pyodbc
-   conn = pyodbc.connect('Driver={ODBC Driver 17 for SQL Server};Server=your-server.database.windows.net;Database=your-database', authentication=pyodbc.ConnectAttr.SQL_COPT_SS_AUTH_ACCESS_TOKEN, user=credential.get_token("https://database.windows.net/.default").token)
+   from azure.cosmos import CosmosClient
+   client = CosmosClient("https://your-account.documents.azure.com:443/", credential=credential)
+
    ```
 
+4. **Azure Event Hubs**:
+   ```python
+   from azure.eventhub import EventHubProducerClient
+   producer = EventHubProducerClient("your-event-hub-namespace.servicebus.windows.net", "your-event-hub", credential=credential)
+   ```
 ## Assigning Permissions to the Managed Identity
 
 ::: {.callout-caution title="Important" appearance="simple" collapse="true"}
