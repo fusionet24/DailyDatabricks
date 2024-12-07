@@ -1,11 +1,10 @@
 ---
-title: "Databricks Managed Identity"
-subtitle: "Unoffical Databricks "
-description: "Learn how to retrieve run parameters. Understand the use of Databricks widgets and dynamically getting the notebook bindings for effective parameter handling."
-date-modified: "07/14/2024"
+title: "Databricks Azure Managed Identity"
+subtitle: "Unoffical use of the databricks user assigned managed identity in Azure "
+description: "Handle edgecase access control  by utilizing the user assigned Managed Identity in your Azure Databricks workspace."
+date-modified: "12/05/2024"
 date-format: "DD/MM/YYYY"
 categories: [managedidentity]
-image: Assets/notebook-context.png
 toc: true
 toc-title: Navigation
 tags: 
@@ -15,22 +14,44 @@ tags:
   - azure
   - security
   - hack
-draft: true
+  - decembricks
+draft: false
 ---
 
+## Summary
+
+- Azure Databricks workspaces come with a built-in User Assigned Managed Identity called `dbmanagedidentity`
+- The Identity is located in the workspace's managed resource group
+- Leveraging the Identity simplifies access control for certain use cases and enhances security.
+
+::: {.callout-warning title="Unofficial Feature" appearance="simple" } 
+Please note that using the Databricks Managed Identity is not officially supported in the documentation. However, due to the architecture of Databricks in Azure, it's unlikely to change in the immediate future. Use this feature at your own risk, as it comes with no warranty.
+:::
 ## Understanding Databricks Managed Identity
 
-Azure Databricks workspaces come with a built-in Managed Identity, located in the workspace's managed resource group. This identity, named `dbmanagedidentity`, facilitates secure, passwordless authentication to various Azure services. However, it is not 
+::: {.callout-note title="What is a User-Assigned Managed Identity?" appearance="simple" collapse="true"}
+A User-Assigned Managed Identity is an Azure Entra ID identity that can be used to authenticate and authorize access to Azure resources. It is created as a standalone Azure resource and can be assigned to one or more Azure services.
+:::
 
-## Key Benefits
+In Azure Databricks, each workspace has a built-in User-Assigned Managed Identity named `dbmanagedidentity`. This identity is located in the workspace's managed resource group.
 
-- Eliminates credential management
-- Enhances security
-- Simplifies access control
+::: {.callout-note title="What is a Managed Resource Group?" appearance="simple" collapse="true"}
+A Managed Resource Group is an Azure Resource Group that is automatically created and managed by Azure Databricks. It contains the necessary resources for the workspace, such as the Managed Identity, storage accounts, and virtual network.
+:::
+
+
+## Use Cases for the Databricks Identity
+
+The Databricks User Assigned Managed Identity `dbmanagedidentity` can be particularly useful in scenarios where:
+
+1. You need to authenticate to a specific Azure resource but cannot use a secret scope to handle credentials (e.g., when too many secrets would be exposed to users via a Key Vault).
+2. You want to assign more granular RBAC roles to the Managed Identity for fine-grained access control vs an SPN.
+3. You want to simplify the authentication process and avoid managing separate credentials for each Azure service.
+
 
 ## Connecting to Azure Services
 
-Use the following code snippet to access the Managed Identity in your Databricks notebook:
+To access the Managed Identity in your Databricks notebook, use the following code snippet:
 
 ```python
 from azure.identity import ManagedIdentityCredential
@@ -59,16 +80,23 @@ credential = ManagedIdentityCredential()
    conn = pyodbc.connect('Driver={ODBC Driver 17 for SQL Server};Server=your-server.database.windows.net;Database=your-database', authentication=pyodbc.ConnectAttr.SQL_COPT_SS_AUTH_ACCESS_TOKEN, user=credential.get_token("https://database.windows.net/.default").token)
    ```
 
-4. **Azure Cosmos DB**:
-   ```python
-   from azure.cosmos import CosmosClient
-   client = CosmosClient("https://your-account.documents.azure.com:443/", credential=credential)
-   ```
+## Assigning Permissions to the Managed Identity
 
-5. **Azure Event Hubs**:
-   ```python
-   from azure.eventhub import EventHubProducerClient
-   producer = EventHubProducerClient("your-event-hub-namespace.servicebus.windows.net", "your-event-hub", credential=credential)
-   ```
+::: {.callout-caution title="Important" appearance="simple" collapse="true"}
+Before using the Managed Identity to access Azure services, you must assign the appropriate permissions to the identity in the target service.
+:::
 
-By leveraging the Databricks Managed Identity, you can securely connect to various Azure services without managing separate credentials, enhancing both security and ease of use in your data processing workflows.
+To find your Databricks Managed Identity:
+
+1. Navigate to your Databricks workspace in the Azure portal
+2. Click on the "Resource group" link to open the managed resource group
+3. Locate the "User Assigned Identities" resource with the name `dbmanagedidentity`
+
+Once you have identified the Managed Identity, follow the documentation for each Azure service to assign the necessary permissions.
+
+## Conclusion
+
+By leveraging the built-in Managed Identity in your Azure Databricks workspace, you can simplify access control and enhance security when connecting to various Azure services. This approach eliminates the need for managing separate credentials and provides a seamless authentication experience.
+
+Remember to assign the appropriate permissions to the Managed Identity in each target Azure service before using it in your Databricks notebooks.
+
