@@ -5,7 +5,6 @@ description: "Learn how to address the INVALID_STATE.RESTORATION_PERIOD_EXPIRED 
 date-modified: "05/14/2023"
 date-format: "DD/MM/YYYY"
 categories: [unity, errors,sql]
-image: Assets/notebook-context.png
 toc:  true
 toc-title: Navigation
 tags: 
@@ -19,25 +18,26 @@ tags:
   - Unity Catalog table recovery
   - Databricks SQL troubleshooting
   - INVALID_STATE.RESTORATION_PERIOD_EXPIRED
-
+  - Decembericks
 ---
 
-
 # Summary
-- **Error Overview**: Insights into why the `INVALID_STATE.RESTORATION_PERIOD_EXPIRED` error occurs within Databricks and Unity Catalog environments.
 
-- **Troubleshooting Steps**: Step-by-step troubleshooting process to identify and resolve Databricks table restoration issues, using commands like `SHOW TABLES DROPPED`.
-  
-- **Restoration with Alternative Names**: Strategies to avoid naming conflicts during the restoration of Databricks tables by employing alternative names.
+-   **Error Overview**: Insights into why the `INVALID_STATE.RESTORATION_PERIOD_EXPIRED` error occurs within Databricks and Unity Catalog environments.
+
+-   **Troubleshooting Steps**: Step-by-step troubleshooting process to identify and resolve Databricks table restoration issues, using commands like `SHOW TABLES DROPPED`.
+
+-   **Restoration with Alternative Names**: Strategies to avoid naming conflicts during the restoration of Databricks tables by employing alternative names.
 
 ## Understanding the Error
-```python
+
+``` python
 [RequestId=<GUID> ErrorClass=INVALID_STATE.RESTORATION_PERIOD_EXPIRED] Cannot undrop table because the table was deleted before the maximum supported restorable period of 7 days.
 ```
+
 ![](Assets/InvalidStateError.png)
 
 When working with data in Databricks, particularly with the Unity Catalog managed tables, users may encounter the `INVALID_STATE.RESTORATION_PERIOD_EXPIRED` error. This error suggests an attempt to recover a table that was deleted more than 7 days ago, exceeding the maximum restorable period supported by Databricks. However, may not always be the case.
-
 
 ::: {.callout-warning title="Key Info" appearance="simple"}
 This post won't help you address tables that were dropped after the 7 day restoration period. It will help with errors within that 7 day window
@@ -45,50 +45,50 @@ This post won't help you address tables that were dropped after the 7 day restor
 
 The `INVALID_STATE.RESTORATION_PERIOD_EXPIRED` error occurs under the following conditions:
 
-- Time Limit Exceeded: The primary reason is attempting to undrop a table after the 7-day restoration window has closed. 
+-   Time Limit Exceeded: The primary reason is attempting to undrop a table after the 7-day restoration window has closed.
 
-- Recreated Table: If a table with the same name has been recreated after being dropped, it can complicate the restoration process.
+-   Recreated Table: If a table with the same name has been recreated after being dropped, it can complicate the restoration process.
 
-- Table Name Issues: Mistakes in the table name during the restoration command might lead to failure in identifying the correct dropped table.
-    
+-   Table Name Issues: Mistakes in the table name during the restoration command might lead to failure in identifying the correct dropped table.
 
 # Solution
+
 ## Troubleshooting Steps
 
 To effectively resolve the `INVALID_STATE.RESTORATION_PERIOD_EXPIRED` error, follow these detailed steps:
 
-1. Verify the Restoration Window
+1.  Verify the Restoration Window
 
 First, ensure that the table was dropped within the last 7 days. If the table was dropped earlier, it cannot be recovered using the UNDROP command.
 
-2. Use SHOW TABLES DROPPED
+2.  Use SHOW TABLES DROPPED
 
 To identify the correct table and verify the drop date, use the SHOW TABLES DROPPED command:
 
-```sql
+``` sql
 SHOW TABLES DROPPED IN my_schema;
 ```
 
 This command will list all the dropped tables in the specified schema along with their metadata including the drop time and table ID.
 
-
-3. Check for Recreated Tables
+3.  Check for Recreated Tables
 
 If a table with the intended name has been recreated, it may not be immediately visible that the original table has been dropped. Confirm the status of the table names and consider using different names for newly created tables to avoid confusion.
 
-4. Restore with Alternative Names
+4.  Restore with Alternative Names
 
 If restoration is required but the original name is taken or to avoid confusion, use the ALTER TABLE RENAME TO command before executing the UNDROP command to assign a new name to the existing table:
 
-```sql
+``` sql
 ALTER TABLE existing_table RENAME TO new_table_name;  -- Rename the existing table
 UNDROP TABLE WITH ID 'your_table_id_here';            -- Restore the dropped table
 ```
-5. Correct Usage of Table IDs
+
+5.  Correct Usage of Table IDs
 
 When attempting to recover a specific table, use the table ID retrieved from the SHOW TABLES DROPPED command. This approach minimizes the risk of errors related to table names:
 
-```sql
+``` sql
 UNDROP TABLE WITH ID 'your_table_id_here';
 ```
 
@@ -96,6 +96,6 @@ UNDROP TABLE WITH ID 'your_table_id_here';
 
 ### Related Tweets
 
-
 ### Links
+
 [Undrop Documentation](https://docs.databricks.com/en/sql/language-manual/sql-ref-syntax-ddl-undrop-table.html)
