@@ -33,7 +33,7 @@ IPython magics come in two flavors:
 - Line magics (prefixed with `%`): Execute on a single line of input
 - Cell magics (prefixed with `%%`): Execute on multiple lines of cell content
 
-::: {.callout-tip title="Build In Magics Tip" appearance="simple"}
+::: {.callout-tip title="Built In Magics Tip" appearance="simple"}
 While Custom Magics are incredibly useful to build.
 Databricks provides many built-in magics which you can list using `%lsmagic`.
 :::
