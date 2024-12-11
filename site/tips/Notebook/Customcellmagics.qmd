@@ -1,0 +1,285 @@
+---
+title: "Custom IPython Magics in Databricks"
+description: "Unlock the power of custom IPython magics in Databricks to streamline your data engineering workflows. Learn how to create line and cell magics that simplify common tasks like checking cluster configurations, analyzing SQL execution plans, and monitoring notebook context. Perfect for data engineers and analysts looking to boost their productivity with practical, reusable code snippets"
+date: "12/08/2024"
+date-format: "DD/MM/YYYY"
+categories: [Databricks, Python, Tips,Decembricks]
+toc: true
+toc-title: Navigation
+tags:
+    - databricks
+    - IPython
+    - DataEngineering
+    - tips
+    - AOP
+    - decembricks
+---
+
+::: {.callout-note title="" appearance="simple"}
+This tip is part of the [Decembricks 2024 series](../../#category=Decembricks) to teach a new tip everyday of december.
+:::
+
+## Summary
+* Learn how to create custom IPython magics % to streamline common Databricks notebook operations
+* Implement practical examples for cluster information, SQL execution plans, and configuration management
+
+## Introduction
+
+If you're working with Databricks notebooks regularly, you've probably used magic commands like `%sql` or `%md`. But did you know you can create your own custom magics to automate repetitive tasks and enhance your notebook workflow? In this tip, we'll explore how to create custom magics specifically designed for Databricks environments.
+
+## Understanding IPython Magics
+
+IPython magics come in two flavors:
+- Line magics (prefixed with `%`): Execute on a single line of input
+- Cell magics (prefixed with `%%`): Execute on multiple lines of cell content
+
+::: {.callout-tip title="Build In Magics Tip" appearance="simple"}
+While Custom Magics are incredibly useful to build.
+Databricks provides many built-in magics which you can list using `%lsmagic`.
+:::
+
+
+### Defining Custom Magics in Code
+
+You will need to always import the appropriate functions from IPython.
+
+Let's look at how to define each type of magic and their usage patterns:
+
+```python
+from IPython.core.magic import (register_line_magic,register_cell_magic,register_line_cell_magic)
+```
+
+::: panel-tabset
+
+## Line Magic
+
+```python
+    @register_line_magic
+    def my_line_magic(self, line):
+        """Simple line magic that processes input after the command."""
+        return f"You passed: {line}"
+
+```
+Example Usage
+```bash
+    %my_line_magic hello world
+    # Output: "You passed: hello world"
+```
+## Cell Magic
+```python
+    @register_cell_magic
+    def my_cell_magic(self, line, cell):
+        """Cell magic that processes both command line and cell content."""
+        return f"Command line: {line}\nCell contents:\n{cell}"
+```
+Example Usage
+```bash
+%%my_cell_magic optional command line args
+This is the
+cell content
+over multiple lines
+# Output: 
+# Command line: optional command line args
+# Cell contents:
+# This is the
+# cell content
+# over multiple lines
+```
+
+## Line & Cell Magic
+When you want want to be able to use it both ways
+```python
+@register_line_cell_magic
+def my_flexible_magic(line, cell=None):
+        """Magic that works in both line and cell modes."""
+        if cell is None:
+            # Line mode
+            return f"Line mode: {line}"
+        else:
+            # Cell mode
+            return f"Line: {line}, Cell:\n{cell}"
+
+```
+Example line magic usage:
+
+```bash
+%my_flexible_magic some_args
+# Output: "Line mode: some_args"
+```
+Example cell magic usage
+```bash
+%%my_flexible_magic command line
+cell
+content
+# Output:
+# Line: command line, Cell:
+# cell
+# content
+```
+:::
+
+
+## Custom Magic Examples for Databricks
+
+Let's explore some practical custom magics that can enhance your Databricks workflow:
+
+### 1. Cluster Information Magic
+
+```python
+from IPython.core.magic import register_line_magic
+
+@register_line_magic
+def spark_info(line):
+    """Print Spark version and environment info."""
+    print(f"Spark Version: {spark.version}")
+    
+    # If on Databricks, often `dbutils` is available for additional info
+    if 'dbutils' in globals():
+        cluster_name = dbutils.notebook.entry_point.getDbutils().notebook().getContext().tags().get("clusterId").get()
+        print(f"Running on cluster: {cluster_name}")
+    else:
+        print("dbutils not found. Cannot retrieve cluster info.")
+
+```
+
+::: {.callout-note title="Usage Example" appearance="simple"}
+Simply run `%spark_info` in your notebook to quickly check your environment details:
+```
+Spark Version: 3.5.0
+Running on cluster: 097-221359-d1i6gxa1
+```
+:::
+
+### 2. Table Explorer Magic
+
+```python
+@register_line_magic
+def show_tables(line):
+    """List tables in the given database: %show_tables dbname"""
+    dbname = line.strip() or "default"
+    tables = spark.catalog.listTables(dbname)
+    for t in tables:
+        print(f"{t.name}\t{t.tableType}")
+```
+
+### 3. SQL Execution Plan Magic
+
+```python
+@register_line_magic
+def explain_sql(line):
+    """
+    Explain the Spark execution plan for a given SQL query.
+    Usage: %explain_sql SELECT * FROM my_table
+    """
+@register_cell_magic
+def explain_sql(line, cell):
+    """
+    Explain the Spark execution plan for a given SQL query.
+    Usage: %explain_sql SELECT * FROM my_table
+    """
+    query = cell.strip()
+    df = spark.sql(query)
+    print(df._jdf.queryExecution().simpleString())
+```
+
+## 4. Notebook Context Magic
+
+Here's a more advanced example that demonstrates how to access and utilize the Databricks [notebook context](context.qmd):
+
+
+```python
+@register_line_magic
+def notebook_context(line):
+    """Display current notebook context information"""
+    context = dbutils.notebook.entry_point.getDbutils().notebook().getContext()
+    
+    info = {
+        "notebook_path": context.notebookPath().get(),
+        "cluster_id": context.clusterId().get(),
+        "workspace_id": context.workspaceId().get()
+    }
+    
+    return info
+```
+::: {.callout-caution title="Use it to enable code that executes per cell" appearance="simple" collapse="true"}
+Utilise our recent tip on [IPython Events](IpythonEvents.qmd) to enable hidden Aspect Oriented Programming code i.e logging of every cell when you need to debug. The below shows how to debug to console but you can change it to your prefered logging tools.
+
+```python
+from IPython.core import events as ip_events
+from IPython.core.magic import (register_line_magic,register_cell_magic,register_line_cell_magic)
+
+def logging_pre(info):
+
+    try:
+
+        print("Debug Logging to Notebook" )
+
+        print(info.__dict__)
+
+    except Exception:
+
+        info.raw_cell = ''
+
+def logging_post(info):
+
+    try:
+
+        print("Debug Logging to Notebook cell succesfully executed:", info.raw_cell)
+
+        print(info.__dict__)
+
+    except Exception:
+
+        info.raw_cell = ''
+
+@register_line_cell_magic
+
+def enable_debug_logging(line):
+    #Line could include logging level etc
+    ipython = get_ipython()
+
+    ipython.events.register('pre_run_cell', logging_pre)
+
+    ipython.events.register('post_run_cell', logging_post)
+```
+Usage:
+
+`%enable_debug_logging verbose`
+
+:::
+
+
+## Best Practices for Custom Magics
+
+1. **Documentation**: Always include detailed docstrings explaining usage and parameters
+2. **Error Handling**: Implement robust error checking for different environments
+3. **Performance**: Keep magics focused and lightweight to maintain notebook responsiveness
+4. **Reusability**: Place commonly used magics in a shared module that can be imported
+
+## Loading Custom Magics
+
+To use your custom magics, create a Python module (e.g., `custom_magics.py`) and load it in your notebook:
+
+```python
+%load_ext custom_magics
+```
+
+You can also create classes of magics, see the [documentation](https://ipython.readthedocs.io/en/stable/config/custommagics.html#defining-custom-magics). 
+
+
+You can also register them directly in code
+```python
+ip = get_ipython()
+#e.g. ip.register_magics(<magic_function>)
+ip.register_magics(my_flexible_magic)
+```
+
+
+## Conclusion
+
+Custom IPython magics can streamline your Databricks workflow by automating common tasks and providing quick access to important information. Start with these examples and build your own magics tailored to your specific needs.
+
+## Further Reading
+- [Official IPython Magic Documentation](https://ipython.readthedocs.io/en/stable/config/custommagics.html)
+- [Databricks Notebook Content](content.qmd)
+
