@@ -1,0 +1,164 @@
+---
+title: "Exploring Databricks Metadata with Spark Catalog and Unity Catalog"
+description: "Learn how to leverage Spark Catalog APIs to programmatically explore and analyze the structure of your Databricks metadata."
+date: "12/09/2024"
+date-format: "DD/MM/YYYY"
+categories: [Databricks,"PySpark", "Unity Catalog", "metadata", Decembricks]
+toc: true
+toc-title: Navigation
+tags:
+    - databricks
+    - unity
+    - DataEngineering
+    - tips
+    - decembricks
+---
+
+::: {.callout-note title="" appearance="simple"}
+This tip is part of the [Decembricks 2024 series](../../#category=Decembricks) to teach a new tip everyday of december.
+:::
+
+## Summary
+
+-   Use `spark.catalog.list` methods to programmatically explore catalogs, databases, tables and columns
+-   Recursively traverse the metadata hierarchy to build a catalog structure dictionary
+-   Compare catalog structures to identify differences between environments
+
+## Overview
+
+As your lakehouse platform grows to encompass more use cases, teams, and workloads, keeping track of all the metadata - catalogs, databases, tables, and columns - can become increasingly challenging. Fortunately, the Spark Catalog APIs provide programmatic methods to explore and analyze this metadata.
+
+In this post, we'll walk through an example of how to use these APIs in PySpark to:
+
+1.  Recursively list all databases and tables within a catalog
+2.  Build a dictionary representing the hierarchical catalog structure
+3.  Compare catalog structures across environments to identify metadata differences
+
+## Exploring Metadata Programmatically
+
+The key to programmatic metadata exploration in Databricks is the family of `spark.catalog.list` methods:
+
+-   `spark.catalog.listCatalogs()` - List all available catalogs
+-   `spark.catalog.listDatabases()` - List databases in the current catalog
+-   `spark.catalog.listTables()` - List tables in a specified database
+-   `spark.catalog.listColumns()` - List columns in a specified table
+
+::: callout-tip
+These same methods are also available on the [unity catalog information schema tables](https://docs.databricks.com/en/sql/language-manual/sql-ref-information-schema.html) if you prefer to use sql.
+:::
+
+Let's see a quick example of using these methods to explore all databases and tables in each catalog:
+
+``` python
+for catalog in spark.catalog.listCatalogs():
+    print("Catalog is ",catalog.name)
+    spark.catalog.setCurrentCatalog(catalog.name)
+    for database in spark.catalog.listDatabases():
+        print("Database is:", database.name)
+        for table in spark.catalog.listTables(database.name):
+            print("Table is:", table.name)
+```
+
+This will output something like:
+
+```         
+Catalog is hive_metastore  
+Database is: default
+Table is: customers
+Table is: orders
+Database is: example
+Table is: flights
+Catalog is unity_dev_environment
+Database is: dlt_pipeline_metrics
+Table is: pipeline_status
+```
+
+## Building a Catalog Structure
+
+While the above snippet is useful for exploration, let's see how we can build a more programmatic representation of our catalog structure that will enable richer analysis and comparison.
+
+``` python
+def get_catalog_structure():
+    catalog_structure = {}
+    all_paths = []
+   
+    for catalog in spark.catalog.listCatalogs():
+        catalog_structure[catalog.name] = {}
+        spark.catalog.setCurrentCatalog(catalog.name)
+       
+        for database in spark.catalog.listDatabases():
+            catalog_structure[catalog.name][database.name] = []
+           
+            tables = spark.catalog.listTables(database.name)
+            for table in tables:
+                catalog_structure[catalog.name][database.name].append(table.name)
+                all_paths.append(f"{catalog.name}.{database.name}.{table.name}")
+
+    return catalog_structure, all_paths
+```
+
+This recursively traverses catalogs and databases, building a dictionary `catalog_structure` where: - Keys are catalog names - Values are dictionaries where: - Keys are database names - Values are lists of tables in that database
+
+It also collects a list `all_paths` containing the fully-qualified paths of each table in "`catalog.database.table`" notation.
+
+::: {.callout-caution title="Error Handling" appearance="simple" collapse="true"}
+The actual implementation wraps each `spark.catalog` call in a try/except block to gracefully handle any missing privileges or other exceptions such as references to tables where the data no longer exists at that location.
+:::
+
+## Comparing Catalog Structures
+
+Now that we can capture a catalog structure, let's put it to use by comparing structures across environments to identify metadata diffs.
+
+``` python
+def compute_catalog_diffs(catalog_structure):
+    # Get list of all catalogs
+    catalogs = list(catalog_structure.keys())
+    diffs = {}
+   
+    # Compare each catalog with every other catalog
+    for i in range(len(catalogs)):
+        for j in range(i + 1, len(catalogs)):
+            cat1, cat2 = catalogs[i], catalogs[j]
+           
+            # Get all paths for catalog 1
+            cat1_paths = set()
+            for db in catalog_structure[cat1]:
+                for table in catalog_structure[cat1][db]:
+                    cat1_paths.add(f"{db}.{table}")
+           
+            # Get all paths for catalog 2
+            cat2_paths = set()
+            for db in catalog_structure[cat2]:
+                for table in catalog_structure[cat2][db]:
+                    cat2_paths.add(f"{db}.{table}")
+           
+            # Compute differences
+            diffs[f"{cat1} vs {cat2}"] = {
+                'onlyin' + cat1: cat1_paths - cat2_paths,
+                'onlyin' + cat2: cat2_paths - cat1_paths,
+                'common': cat1_paths & cat2_paths
+            }
+   
+    return diffs
+```
+
+This compares every unique pair of catalogs, building path sets for each, and computing 3 diffs: 1. `only_in_X` - paths only in catalog X 2. `only_in_Y` - paths only in catalog Y 3. `common` - paths in both
+
+::: callout-tip
+For large numbers of catalogs, you may want to selectively compare certain pairs rather than combinatorially comparing all pairs.
+:::
+
+#### Usage
+
+``` python
+structure, all_paths = get_catalog_structure()
+differences = compute_catalog_diffs(structure) 
+```
+
+## Resources
+
+-   [PySpark listCatalogs()](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.Catalog.listCatalogs.html)
+-   [PySpark listDatabases()](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.Catalog.listDatabases.html)\
+-   [PySpark listTables()](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.Catalog.listTables.html)
+
+\`\`\`
