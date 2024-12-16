@@ -127,10 +127,21 @@ To check the current state of logging, use `%logstate`:
 
 ```         
 Logging is currently ON
-Log file at: /databricks/driver/logs/notebook_20230510.log
+Log file at: <log_path>.log
 ```
 
-By utilizing these logging magics, you can keep detailed records of your notebook activities, which can be invaluable for auditing, reproducing results, and troubleshooting issues.
+The Internals of the file look like:
+
+```txt
+# IPython log file
+get_ipython().run_line_magic('logstart', '')
+df = spark.sql("SELECT * FROM default.my_test_delta_table")
+df.count()
+get_ipython().run_line_magic('logstate', '')
+get_ipython().run_cell_magic('logstop', '', '')
+```
+
+By utilizing these logging magics, you can keep detailed records of your notebook activities. You can expand this to implement your own custom version of the logger magic.
 
 ## Running Shell Commands and Other Languages
 
