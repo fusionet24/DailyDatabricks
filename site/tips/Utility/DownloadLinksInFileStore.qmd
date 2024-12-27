@@ -1,0 +1,77 @@
+---
+title: "Easy Download Links from Databricks Notebooks using FileStore"
+date: "12/14/2024"
+date-format: "DD/MM/YYYY"
+categories: [Databricks, Python, Tips,Decembricks]
+toc: true
+toc-title: Navigation
+tags:
+    - Beginner Tip
+    - Databricks
+    - Python
+    - FileStore
+    - day14
+---
+
+
+::: {.callout-important appearance="simple"}
+
+[Filestore is not actively recommended and considered legacy by Databricks](https://docs.databricks.com/en/archive/legacy/filestore.html#filestore)
+:::
+
+
+### Summary
+- Databricks FileStore allows you to store files that are accessible via download links 
+- You can programmatically generate download URLs for files in FileStore
+- While FileStore works, using external cloud storage like Azure Blob Storage or AWS S3 is generally recommended for file sharing
+
+### Detail
+
+Databricks FileStore provides a convenient way to store files that you want to make available for download. By copying files into the special `/FileStore` directory in DBFS, you can easily generate URLs that allow users to download those files directly from rendered notebooks.
+
+::: {.callout-note appearance="simple"}
+This code snippet assumes you have already generated a file, like an Excel spreadsheet, and saved it to a temporary location like `/tmp`. Adjust the code based on your specific use case.
+:::
+
+Here's how you can create a download link for a file using FileStore in a Python notebook:
+
+```python
+# File paths
+temp_file_path = "/tmp/output_data.xlsx"
+filestore_path = "/FileStore/output_data.xlsx"
+
+# Code to generate the Excel file and save to temp_file_path 
+# goes here...
+
+# Copy the file from temp directory to FileStore
+dbutils.fs.cp(f"file:{temp_file_path}", filestore_path)
+
+# Get the URL parameters 
+workspace_url = spark.conf.get("spark.databricks.workspaceUrl")
+
+# Generate the download URL
+download_url = f"https://{workspace_url}/files/output_data.xlsx"
+
+# Render the download link using displayHTML
+displayHTML(f"<a href='{download_url}'>Click here to download the Excel file</a>")
+```
+
+
+
+The key steps are:
+
+1. Copy the file into FileStore using `dbutils.fs.cp` 
+2. Retrieve the workspace URL from the Spark context
+3. Construct the download URL 
+4. Render the download link using `displayHTML`
+
+When a user clicks the rendered download link, it will prompt their browser to download the file directly from FileStore.
+
+
+## Reference
+For more details on the FileStore and other Databricks file system concepts, check out:
+- [Databricks File System Overview](https://docs.databricks.com/data/databricks-file-system.html) 
+- [The Databricks FileStore](https://docs.databricks.com/data/filestore.html)
+- [Download File Store StackOverflow](https://stackoverflow.com/questions/73682957/how-to-programmatically-retrieve-the-workspace-url-and-clusterowneruserid)
+
+
