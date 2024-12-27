@@ -71,8 +71,11 @@ When a user clicks the rendered download link, it will prompt their browser to d
 
 ## Reference
 For more details on the FileStore and other Databricks file system concepts, check out:
-- [Databricks File System Overview](https://docs.databricks.com/data/databricks-file-system.html) 
+
+- [Databricks File System Overview](https://docs.databricks.com/data/databricks-file-system.html)
+
 - [The Databricks FileStore](https://docs.databricks.com/data/filestore.html)
+
 - [Download File Store StackOverflow](https://stackoverflow.com/questions/73682957/how-to-programmatically-retrieve-the-workspace-url-and-clusterowneruserid)
 
 
