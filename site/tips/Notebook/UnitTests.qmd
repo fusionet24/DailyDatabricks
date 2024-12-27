@@ -23,15 +23,15 @@ This tip is part of the [Decembricks 2024 series](../../#category=Decembricks) t
 
 # Summary
 
-- **Dynamic Test Case Discovery**: Automatically loads test cases from the current notebook module.
-- **Reflection Magic**: Uses reflection to introspect classes, searching for `unittest.TestCase` subclasses.
-- **Test Suite Management**: Organizes tests into a suite for easier management.
+-   **Dynamic Test Case Discovery**: Automatically loads test cases from the current notebook module.
+-   **Reflection Magic**: Uses reflection to introspect classes, searching for `unittest.TestCase` subclasses.
+-   **Test Suite Management**: Organizes tests into a suite for easier management.
 
-# Code 
+# Code
 
 ## Load All Test Classes from the Current Notebook
 
-```python
+``` python
 import sys
 import unittest
 
@@ -58,7 +58,7 @@ runner.run(suite)
 
 These are some sample functions in python that we will use to illustrate how unit tests work
 
-```python
+``` python
 def add(a, b):
     """Perform addition of two numeric values."""
     return a + b
@@ -72,7 +72,7 @@ def multiply(a, b):
 
 These are sample Unit Test Cases
 
-```python
+``` python
 import unittest
 
 class TestGenericMathOperations(unittest.TestCase):
@@ -101,27 +101,28 @@ class TestGenericMathOperations(unittest.TestCase):
 
 In the spirit of enabling flexible test discovery, this snippet takes advantage of reflection to dynamically load all test cases in the current notebook module. Let's dive into the finer details:
 
-1. **`TestSuite` Setup**: We initialize an empty `TestSuite` to collect individual test cases.
+1.  **`TestSuite` Setup**: We initialize an empty `TestSuite` to collect individual test cases.
 
-2. **Current Module Context**: Accessing `sys.modules[__name__]` grants a reference to the currently running module, a key tool for reflection.
+2.  **Current Module Context**: Accessing `sys.modules[__name__]` grants a reference to the currently running module, a key tool for reflection.
 
-3. **Reflection and Filtering**:
-   - The `dir` function retrieves all objects in the module.  
-   - `getattr` allows accessing the object itself by name.
-   - We then ensure the object is a subclass of `unittest.TestCase` but not the base class itself.
+3.  **Reflection and Filtering**:
 
-4. **Loading Tests**: `unittest.TestLoader().loadTestsFromTestCase` loads tests from each discovered class, and the suite aggregates them.
+    -   The `dir` function retrieves all objects in the module.\
+    -   `getattr` allows accessing the object itself by name.
+    -   We then ensure the object is a subclass of `unittest.TestCase` but not the base class itself.
+
+4.  **Loading Tests**: `unittest.TestLoader().loadTestsFromTestCase` loads tests from each discovered class, and the suite aggregates them.
 
 # Benefits
 
-- **Automation and Flexibility**: Automatically loading tests simplifies running new tests without manual suite updates.
-- **Dynamic Testing**: Great for scenarios where test classes change frequently or are dynamically generated.
-  
+-   **Automation and Flexibility**: Automatically loading tests simplifies running new tests without manual suite updates.
+-   **Dynamic Testing**: Great for scenarios where test classes change frequently or are dynamically generated.
+
 # Cautions
 
-- **Over-Discovery**: This method could inadvertently load experimental or partial test classes, leading to unintended test runs.
-- **Opaque Testing**: The reliance on reflection makes the test suite implicit and less readable. Reviewers may struggle to understand the source of loaded tests. 
-- **Performance**: The reflective lookup over the entire module can be inefficient, especially in larger projects.
+-   **Over-Discovery**: This method could inadvertently load experimental or partial test classes, leading to unintended test runs.
+-   **Opaque Testing**: The reliance on reflection makes the test suite implicit and less readable. Reviewers may struggle to understand the source of loaded tests.
+-   **Performance**: The reflective lookup over the entire module can be inefficient, especially in larger projects.
 
 # References & Further Reading
 
@@ -129,4 +130,4 @@ In the spirit of enabling flexible test discovery, this snippet takes advantage 
 
 ### Links
 
-- [unittest Documentation](https://docs.python.org/3/library/unittest.html): Learn more about Python's built-in testing framework.
+-   [unittest Documentation](https://docs.python.org/3/library/unittest.html): Learn more about Python's built-in testing framework.

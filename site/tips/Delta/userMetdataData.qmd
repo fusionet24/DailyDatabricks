@@ -15,36 +15,45 @@ tags:
     - datalineage
     - tips
     - day2
+    - decembricks
 draft: False
+day: 2
 ---
+
 ## Summary
-* Learn how to enrich your Delta tables with custom metadata for better data lineage and governance
-* Implement metadata logging at both session and individual write operation levels
-* Explore practical use cases for leveraging custom metadata in data pipelines
+
+-   Learn how to enrich your Delta tables with custom metadata for better data lineage and governance
+-   Implement metadata logging at both session and individual write operation levels
+-   Explore practical use cases for leveraging custom metadata in data pipelines
 
 ## Introduction
+
 When working with Delta Lake tables in Databricks, one often overlooked but powerful feature is the ability to log custom metadata. This capability allows you to embed valuable context directly into your Delta table's commit history, making it easier to track data lineage, audit changes, and maintain documentation. In this post, we'll explore how to implement custom metadata logging and discuss some practical applications.
 
 ## Setting Up Custom Metadata
 
 ### Session-Level Configuration
+
 You can configure custom metadata logging for all Delta operations in a Spark session. Here's how to do it in different languages:
 
 ::: panel-tabset
 ## Python
 
 ### Session Level Config
-```python
+
+``` python
 # Using SparkConf
 spark.conf.set(
     "spark.databricks.delta.commitInfo.userMetadata",
     "Global session metadata - Data processed by ETL pipeline v2.1"
 )
 ```
-###  Operation-Level Configuration
+
+### Operation-Level Configuration
+
 For more granular control, you can add metadata to specific Dataframe Writer operations:
 
-```python
+``` python
 df.write.format("delta") \
     .option("userMetadata", "Custom metadata for this specific write operation") \
     .mode("append") \
@@ -53,19 +62,17 @@ df.write.format("delta") \
 
 ## SQL
 
-```sql
+``` sql
 SET spark.databricks.delta.commitInfo.userMetadata = 'Global session metadata - Data processed by ETL pipeline v2.1';
 ```
 
-
 ## R
 
-```r
+``` r
 library(SparkR)
 sparkR.session()
 sparkR.session(sparkConfig = list("spark.databricks.delta.commitInfo.userMetadata" =
     "Global session metadata - Data processed by ETL pipeline v2.3"))
-
 
 ```
 :::
@@ -74,7 +81,7 @@ sparkR.session(sparkConfig = list("spark.databricks.delta.commitInfo.userMetadat
 
 ### 1. Data Pipeline Tracking
 
-```python
+``` python
 from datetime import datetime
 import json
 
@@ -91,11 +98,11 @@ df.write.format("delta") \
     .saveAsTable("customer_data")
 ```
 
-
 ### 2. Data Quality Monitoring
+
 Track quality metrics and validation results alongside your data:
 
-```python
+``` python
 quality_metadata = {
     "null_percentage": df.filter(col("important_field").isNull()).count() / df.count() * 100,
     "distinct_values": df.select("category_field").distinct().count(),
@@ -110,9 +117,10 @@ df.write.format("delta") \
 ```
 
 ### 3. Compliance and Audit Trail
+
 For regulated industries, maintain detailed audit trails:
 
-```python
+``` python
 audit_metadata = {
     "approved_by": "data.governance@company.com",
     "approval_ticket": "TICK-123",
@@ -123,34 +131,36 @@ audit_metadata = {
 
 ## Best Practices and Tips
 
-1. **Structured Metadata**: Use JSON format for complex metadata to maintain consistency and queryability
-2. **Size Considerations**: Keep metadata concise - it's stored with every commit
-3. **Automation**: Implement automated metadata logging in your ETL frameworks
-4. **Documentation**: Include metadata schemas in your data documentation
+1.  **Structured Metadata**: Use JSON format for complex metadata to maintain consistency and queryability
+2.  **Size Considerations**: Keep metadata concise - it's stored with every commit
+3.  **Automation**: Implement automated metadata logging in your ETL frameworks
+4.  **Documentation**: Include metadata schemas in your data documentation
 
 ::: {.callout-warning title="Important Considerations" appearance="simple"}
-- Metadata is immutable once written
-- Large metadata can impact performance
-- Consider implementing a standard metadata schema across your organization
+-   Metadata is immutable once written
+-   Large metadata can impact performance
+-   Consider implementing a standard metadata schema across your organization
 :::
 
 ## Querying Metadata History
+
 There are several ways to access the commit history and metadata of your Delta tables. Let's explore the different approaches:
 
 ::: panel-tabset
 ## SQL
+
 The simplest way is to use native SQL:
 
-```sql
+``` sql
 -- View complete history with metadata
 DESCRIBE HISTORY my_delta_table;
-
 ```
 
 ## Python DeltaTable API
+
 For Python users, the `DeltaTable` class provides a programmatic way to access history:
 
-```python
+``` python
 from delta.tables import DeltaTable
 
 # Get the DeltaTable instance
@@ -171,9 +181,10 @@ metadata_history.show(truncate=False)
 ```
 
 ## Scala DeltaTable API
+
 If you're working in Scala, you can use similar functionality:
 
-```scala
+``` scala
 import io.delta.tables._
 
 // Get the DeltaTable instance
@@ -191,20 +202,17 @@ val metadataHistory = historyDF
 // Display the results
 metadataHistory.show(false)
 ```
-::: 
-
-::: {.callout-tip title="Pro Tip" appearance="simple"}
-The history command returns a DataFrame, so you can leverage all the standard DataFrame operations to analyze your metadata. For example, you could:
-- Parse JSON metadata into structured columns
-- Aggregate metadata patterns over time
-- Join with other tracking tables for comprehensive lineage
 :::
 
+::: {.callout-tip title="Pro Tip" appearance="simple"}
+The history command returns a DataFrame, so you can leverage all the standard DataFrame operations to analyze your metadata. For example, you could: - Parse JSON metadata into structured columns - Aggregate metadata patterns over time - Join with other tracking tables for comprehensive lineage
+:::
 
 ## Conclusion
+
 Custom metadata logging in Delta tables provides a powerful way to enhance your data lake's observability and governance. By implementing these practices, you can build more maintainable and traceable data pipelines.
 
 ## Further Reading
 
-- [Enrich Delta Lake tables with custom metadata](https://learn.microsoft.com/en-us/azure/databricks/delta/custom-metadata)
-- [Delta Lake Documentation on Transaction Log](https://www.databricks.com/blog/2019/08/21/diving-into-delta-lake-unpacking-the-transaction-log.html)
+-   [Enrich Delta Lake tables with custom metadata](https://learn.microsoft.com/en-us/azure/databricks/delta/custom-metadata)
+-   [Delta Lake Documentation on Transaction Log](https://www.databricks.com/blog/2019/08/21/diving-into-delta-lake-unpacking-the-transaction-log.html)

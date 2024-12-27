@@ -15,39 +15,39 @@ tags:
     - datalineage
     - tips
     - day3
+     - decembricks
 draft: False
 ---
 
-## Summary 
+## Summary
 
-* Named window specifications allow you to define a window once and reference it in multiple window functions
-* This improves code readability and reduces duplication when using the same window definition repeatedly
-* Supported in both Databricks SQL and PySpark DataFrame API
-
+-   Named window specifications allow you to define a window once and reference it in multiple window functions
+-   This improves code readability and reduces duplication when using the same window definition repeatedly
+-   Supported in both Databricks SQL and PySpark DataFrame API
 
 ## Detail
-Window functions are a powerful tool for performing calculations across a set of rows related to the current row. However, when you need to apply the same window definition to multiple functions, the query can quickly become verbose and hard to read. 
+
+Window functions are a powerful tool for performing calculations across a set of rows related to the current row. However, when you need to apply the same window definition to multiple functions, the query can quickly become verbose and hard to read.
 
 Named window specifications solve this by allowing you to declare the window spec once and reference it by name. Here's how it works:
 
 ::: panel-tabset
-
 ## Databricks SQL
 
-### Syntax: 
+### Syntax:
 
-```sql
+``` sql
 WINDOW { window_name AS window_spec } [, ...]
 ```
 
 Where:
 
-- `window_name` is an identifier to reference the window spec 
-- `window_spec` is the window definition to share across functions
-
+-   `window_name` is an identifier to reference the window spec
+-   `window_spec` is the window definition to share across functions
 
 ### Example:
-```sql
+
+``` sql
 SELECT product, 
        SUM(sales) OVER monthly_window AS monthly_sales,
        AVG(sales) OVER monthly_window AS avg_monthly_sales
@@ -57,7 +57,7 @@ WINDOW monthly_window AS (PARTITION BY product ORDER BY date)
 
 ## PySpark
 
-```python 
+``` python
 from pyspark.sql import Window
 from pyspark.sql.functions import *
 
@@ -69,17 +69,17 @@ sales_data = sales_data.select(
     avg("sales").over(window).alias("avg_monthly_sales")
 )
 ```
-
 :::
 
+## Benefits
 
-## Benefits 
 ::: {.callout-tip title="Why use named windows?" appearance="simple"}
-* Makes queries with multiple window functions more concise and readable
-* Allows easy reuse of complex window definitions 
-* Helps avoid errors from repeating the same window spec multiple times
+-   Makes queries with multiple window functions more concise and readable
+-   Allows easy reuse of complex window definitions
+-   Helps avoid errors from repeating the same window spec multiple times
 :::
 
 ## Further Reading
-- [Databricks SQL - SELECT Named Window](https://docs.databricks.com/sql/language-manual/sql-ref-syntax-qry-select-named-window.html) 
-- [PySpark Window Functions](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.Window.html)
+
+-   [Databricks SQL - SELECT Named Window](https://docs.databricks.com/sql/language-manual/sql-ref-syntax-qry-select-named-window.html)
+-   [PySpark Window Functions](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.Window.html)

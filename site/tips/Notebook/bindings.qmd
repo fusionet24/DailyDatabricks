@@ -2,7 +2,7 @@
 title: "Retrieving Notebook Bindings Dynamically"
 subtitle: "Fetching Run Parameters"
 description: "Learn how to retrieve run parameters. Understand the use of Databricks widgets and dynamically getting the notebook bindings for effective parameter handling."
-date-modified: "05/14/2024"
+date-modified: "12/18/2024"
 date-format: "DD/MM/YYYY"
 categories: [notebooks, job parameters]
 toc: true
@@ -15,24 +15,26 @@ tags:
   - run parameters
   - RunID
   - dynamic parameter fetching
-
+   - decembricks
 ---
 
 ::: {.callout-note title="Learn More" appearance="simple"}
-
 Learn More about Notebooks and [Context Objects](context.qmd)
 :::
+
 # Summary
-- **Overview**: An introduction to Databricks widgets, their usage, and how to retrieve their values.
-- **Dynamic Bindings**: Explanation of dynamically fetching notebook bindings and when this is appropriate.
-- **Run Parameters**: How to get job parameters when a notebook is executed as a job.
+
+-   **Overview**: An introduction to Databricks widgets, their usage, and how to retrieve their values.
+-   **Dynamic Bindings**: Explanation of dynamically fetching notebook bindings and when this is appropriate.
+-   **Run Parameters**: How to get job parameters when a notebook is executed as a job.
 
 ## Understanding Databricks Widgets
+
 Databricks widgets are UI components that enable users to input parameters interactively when running notebooks. They are essential for parameterizing notebooks and making them more dynamic and reusable.
 
 Widgets can be created using `dbutils.widgets` and their values can be retrieved using `dbutils.widgets.getArguments`. Here is an example of creating and retrieving a widget value:
 
-```python
+``` python
 dbutils.widgets.text("input", "default")
 input_value = dbutils.widgets.get("input")
 print(f"The value of the input widget is: {input_value}")
@@ -41,9 +43,10 @@ print(f"The value of the input widget is: {input_value}")
 ## Retrieving Notebook Bindings Dynamically
 
 ### Using Job Parameters
+
 When a notebook is run as part of a Databricks job, job parameters can be fetched as a dictionary using the `dbutils` package. This method is useful for dynamically retrieving parameters and making notebooks more adaptable to different environments and use cases.
 
-```python
+``` python
 run_parameters = dbutils.notebook.entry_point.getCurrentBindings()
 print(run_parameters)
 ```
@@ -59,21 +62,22 @@ The `getCurrentBindings()` method can also retrieve any active widget values for
 ## Practical Applications
 
 ### When to Use Dynamic Bindings
+
 Dynamic bindings are particularly useful in the following scenarios:
 
-- **Scheduled Jobs**: When notebooks are run as scheduled jobs, dynamically fetching parameters ensures that the notebook uses the correct configuration.
-  
-- **Environment Configuration**: Adjusting configurations based on the environment (development, staging, production) can be streamlined by dynamically fetching parameters.
-  
-- **Reusable Notebooks**: Creating reusable notebooks that adapt to different inputs without manual intervention enhances productivity and reduces errors.
+-   **Scheduled Jobs**: When notebooks are run as scheduled jobs, dynamically fetching parameters ensures that the notebook uses the correct configuration.
 
+-   **Environment Configuration**: Adjusting configurations based on the environment (development, staging, production) can be streamlined by dynamically fetching parameters.
+
+-   **Reusable Notebooks**: Creating reusable notebooks that adapt to different inputs without manual intervention enhances productivity and reduces errors.
 
 # References & Further Reading
 
 ### Related Tweets
 
 ### Links
-[Databricks Widgets Documentation](https://docs.databricks.com/notebooks/widgets.html)  
+
+[Databricks Widgets Documentation](https://docs.databricks.com/notebooks/widgets.html)\
 [Databricks Job Parameters](https://docs.databricks.com/workflows/jobs.html)
 
-[Dynamic Run Parameters] (https://stackoverflow.com/questions/63018871/how-do-you-get-the-run-parameters-and-runid-within-databricks-notebook)
+\[Dynamic Run Parameters\] (https://stackoverflow.com/questions/63018871/how-do-you-get-the-run-parameters-and-runid-within-databricks-notebook)
