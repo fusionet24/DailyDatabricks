@@ -2,3 +2,4 @@
 .Rproj.user
 site/.Rhistory
 site/_site/*
+node_modules
