@@ -27,13 +27,14 @@ jobs:
       run: sudo curl -LO https://quarto.org/download/latest/quarto-linux-amd64.deb
     - name: Install the deb file
       run: sudo apt-get install -y ./quarto-linux-amd64.deb
-    - name: Verify Install
-      run: /usr/local/bin/quarto check
     - name: Setup Python
-      if: inputs.rerender == true
       uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Install Jupyter
+      run: pip install jupyter
+    - name: Verify Install
+      run: /usr/local/bin/quarto check
     - name: Setup post venvs and re-render
       if: inputs.rerender == true
       run: |
