@@ -1,6 +1,12 @@
 name: Validate Site and Deploy
 
 on:
+  workflow_dispatch:
+    inputs:
+      rerender:
+        description: 'Force re-render executable posts'
+        type: boolean
+        default: false
   push:
     branches:
       - main
@@ -18,12 +24,35 @@ jobs:
     - name: Install GDebi first
       run: sudo apt-get install gdebi-core
     - name: Download the deb file
-      run: sudo curl -LO https://quarto.org/download/latest/quarto-linux-amd64.deb 
+      run: sudo curl -LO https://quarto.org/download/latest/quarto-linux-amd64.deb
     - name: Install the deb file
       run: sudo apt-get install -y ./quarto-linux-amd64.deb
     - name: Verify Install
       run: /usr/local/bin/quarto check
-    - name: render site 
+    - name: Setup Python
+      if: inputs.rerender == true
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Setup post venvs and re-render
+      if: inputs.rerender == true
+      run: |
+        for req_file in $(find site/tips -name requirements.txt); do
+          post_dir=$(dirname "$req_file")
+          python3 -m venv "$post_dir/.venv"
+          source "$post_dir/.venv/bin/activate"
+          pip install --upgrade pip
+          pip install -r "$req_file"
+          for qmd_file in "$post_dir"/*.qmd; do
+            quarto render "$qmd_file"
+          done
+          deactivate
+        done
+      env:
+        DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+        DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        DATABRICKS_CLUSTER_ID: ${{ secrets.DATABRICKS_CLUSTER_ID }}
+    - name: render site
       run: quarto render site/
     - name: Output folder directories
       run: ls
