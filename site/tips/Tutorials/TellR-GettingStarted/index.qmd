@@ -1,0 +1,217 @@
+---
+title: "Getting Started with TellR: AI-Powered Slides from Databricks"
+subtitle: "Generate presentation-ready slides from the Bakehouse sample dataset using TellR"
+description: "Learn how to install and use TellR, an agentic Databricks App that turns your data into interactive slide decks through natural language."
+date-modified: "30/01/2026"
+date-format: "DD/MM/YYYY"
+categories: [TellR, Databricks Apps, AI, Tutorials]
+image: Assets/tellr-thumbnail.png
+toc: true
+toc-title: Navigation
+tags:
+  - databricks
+  - tellr
+  - genie
+  - unity-catalog
+  - presentations
+  - ai
+draft: false
+execute:
+  enabled: true
+---
+
+```{python}
+#| include: false
+#| label: setup
+import sys, os
+sys.path.insert(0, os.path.abspath("../../.."))
+from _databricks import get_spark_session
+spark = get_spark_session()
+```
+
+::: {.callout-note title="Screenshots & Video" appearance="simple"}
+All the code in this tutorial post is rendered against a databricks workspace before publication. A video is also provided for your convenince.
+:::
+
+## Summary
+
+-   **TellR** is an open-source Databricks App that generates interactive slide decks from your data using natural language
+-   You'll install TellR, connect it to the **Bakehouse** sample dataset in Unity Catalog, and create your first presentation
+-   TellR queries your data through **Genie spaces**, respecting Unity Catalog permissions automatically
+-   Slides are rendered as interactive HTML with **Chart.js** visualizations
+-   You can refine slides conversationally — no need to start over
+
+## Video Walkthrough
+
+{{< video https://www.youtube.com/watch?v=VIDEO_ID >}}
+
+## What is TellR?
+
+[TellR](https://github.com/robertwhiffin/ai-slide-generator) is an agentic application that generates presentation-ready slides from enterprise data through conversational interaction. It runs as a Databricks App and integrates with Genie spaces to query live, governed data.
+
+Key features:
+
+-   **Conversational slide creation** — Describe what you want in plain English and TellR builds the deck
+-   **Genie integration** — Queries your data through Genie spaces, so your slides reflect real, up-to-date numbers
+-   **Unity Catalog security** — All data access respects your existing permissions; no data leaks outside governance boundaries
+-   **Interactive visualizations** — Generates Chart.js-based charts that are interactive in the browser
+-   **Iterative editing** — Refine slides with follow-up prompts like "add a Q3 comparison" or "change the chart to a bar graph"
+-   **Prompt-only mode** — Works without Genie for general-purpose presentations
+
+## Prerequisites
+
+Before you begin, make sure you have:
+
+-   A **Databricks workspace** with Apps enabled
+-   Permission to **create a Lakebase** (or an existing schema you can use)
+-   Access to the **Bakehouse sample dataset** in Unity Catalog (available by default in most workspaces)
+-   A **Genie space** (we'll create one in Step 2) or willingness to use prompt-only mode
+
+## The Bakehouse Dataset
+
+The Bakehouse dataset is a sample dataset available in Unity Catalog. It models a bakery franchise business with sales, customers, suppliers, and reviews.
+
+| Table                        | Description                              |
+|------------------------------|------------------------------------------|
+| `sales_transactions`         | Fact table with individual sales records |
+| `sales_customers`            | Customer dimension table                 |
+| `sales_franchises`           | Franchise/store location details         |
+| `sales_suppliers`            | Product supplier information             |
+| `media_customer_reviews`     | Customer feedback and ratings            |
+| `media_gold_reviews_chunked` | Processed review data for analytics      |
+
+::: {.callout-tip title="Finding the Dataset" appearance="simple"}
+In your Databricks workspace, navigate to the **Catalog Explorer** and look under `samples` \> `bakehouse`. If you don't see it, your workspace administrator may need to enable sample datasets.
+:::
+
+Let's explore the tables to get familiar with the data:
+
+```{python}
+# Browse the bakehouse schema
+spark.sql("SHOW TABLES IN samples.bakehouse").show()
+```
+
+```{python}
+# Preview the sales transactions
+spark.table("samples.bakehouse.sales_transactions").limit(10).show()
+```
+
+```{python}
+# Check the schema
+spark.table("samples.bakehouse.sales_transactions").printSchema()
+```
+
+## Step 1: Install TellR
+
+Open a new notebook in your Databricks workspace and run the following cells:
+
+``` python
+%pip install --upgrade databricks-tellr databricks-sdk==0.73.0
+dbutils.library.restartPython()
+```
+
+Then create the TellR app:
+
+``` python
+import databricks_tellr as tellr
+
+tellr.create(
+    lakebase_name="tellr-db",
+    schema_name="app_data",
+    app_name="tellr",
+    app_file_workspace_path="/Workspace/Users/you@example.com/.apps/tellr"
+)
+```
+
+::: {.callout-note title="Workspace Path" appearance="simple"}
+Replace `you@example.com` with your actual Databricks username. This is the workspace path where TellR's application files will be stored.
+:::
+
+![Installing TellR in a Databricks notebook](Assets/tellr-install.png)
+
+## Step 2: Create a Genie Space
+
+TellR uses Genie spaces to query your data with natural language. To set one up for the Bakehouse dataset:
+
+1.  In your Databricks workspace, go to **Genie** in the left sidebar
+2.  Click **New Genie space**
+3.  Give it a name like "Bakehouse Analytics"
+4.  Add the Bakehouse tables you want TellR to query:
+    -   `samples.bakehouse.sales_transactions`
+    -   `samples.bakehouse.sales_customers`
+    -   `samples.bakehouse.sales_franchises`
+    -   `samples.bakehouse.sales_suppliers`
+    -   `samples.bakehouse.media_customer_reviews`
+5.  Add a description to help Genie understand the data context, for example: "Sales and customer data for a bakery franchise business. Includes transactions, customer details, franchise locations, suppliers, and customer reviews."
+6.  Save the Genie space
+
+![Creating a Genie space for the Bakehouse dataset](Assets/genie-space-setup.png)
+
+::: {.callout-tip title="Genie Space Tips" appearance="simple"}
+The more descriptive your Genie space instructions are, the better TellR will understand your data. Include details about relationships between tables and common business questions.
+:::
+
+## Step 3: Launch the App
+
+Once TellR is installed and your Genie space is ready:
+
+1.  Navigate to **Apps** in the left sidebar of your Databricks workspace
+2.  Find and open the **tellr** app
+3.  The TellR interface will load in your browser
+
+![TellR app running in Databricks](Assets/tellr-app-launch.png)
+
+## Step 4: Generate Your First Slide Deck
+
+Now for the fun part. In TellR's chat interface, describe the presentation you want. Here are some prompts to try with the Bakehouse dataset:
+
+**Start with a simple request:**
+
+> Create a presentation showing total sales by franchise location
+
+**Add more slides:**
+
+> Add a slide comparing customer review ratings across franchises
+
+**Get more specific:**
+
+> Add a slide showing monthly sales trends for the top 3 franchises over the last year
+
+**Refine existing slides:**
+
+> Change the sales trend chart to use a line graph instead of bars
+
+![TellR generating slides from the Bakehouse dataset](Assets/tellr-slides-generated.png)
+
+TellR will query your Genie space for the data, generate insights, and produce an interactive slide deck. Each slide can include:
+
+-   Data-driven text summaries
+-   Interactive Chart.js visualizations
+-   Tables with key metrics
+
+![Example slide deck with charts and data](Assets/tellr-slide-example.png)
+
+## Tips & Tricks
+
+::: {.callout-tip title="Prompt-Only Mode" appearance="simple"}
+If you don't have a Genie space set up, TellR can still generate slides from descriptive prompts. It won't pull live data, but it's useful for creating general-purpose presentations quickly.
+:::
+
+::: {.callout-tip title="Iterative Refinement" appearance="simple"}
+You don't need to get your prompts perfect the first time. TellR supports conversational editing — ask it to change colours, swap chart types, add comparisons, or restructure the narrative. Think of it like chatting with a presentation designer.
+:::
+
+::: {.callout-tip title="Export Your Slides" appearance="simple"}
+TellR generates HTML slides, which means they're easy to share via a link or embed in other tools. You can also screenshot or print to PDF for traditional distribution.
+:::
+
+::: {.callout-note title="Unity Catalog Permissions" appearance="simple"}
+TellR respects your Unity Catalog permissions. If you can't see certain data in the Catalog Explorer, TellR won't be able to query it either. This means your presentations are always within your governance boundaries.
+:::
+
+## References & Further Reading
+
+-   [TellR GitHub Repository](https://github.com/robertwhiffin/ai-slide-generator)
+-   [Databricks Apps Documentation](https://docs.databricks.com/en/dev-tools/databricks-apps/index.html)
+-   [Databricks Genie Documentation](https://docs.databricks.com/en/genie/index.html)
+-   [Unity Catalog Overview](https://docs.databricks.com/en/data-governance/unity-catalog/index.html)

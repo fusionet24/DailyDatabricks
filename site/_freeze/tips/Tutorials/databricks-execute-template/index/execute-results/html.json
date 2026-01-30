@@ -1,0 +1,12 @@
+{
+  "hash": "5fa0c62646a24c9af52fb6f54b92b45d",
+  "result": {
+    "engine": "jupyter",
+    "markdown": "---\ntitle: \"Databricks Execution Template\"\ndescription: \"Template for posts that execute code against a Databricks cluster\"\ndate-modified: \"30/01/2026\"\ndate-format: \"DD/MM/YYYY\"\ndraft: true\ncategories: [Tutorials]\nexecute:\n  enabled: true\n---\n\n\n::: {.callout-note title=\"Live Execution\" appearance=\"simple\"}\nAll code in this post is rendered against a Databricks workspace before publication.\n:::\n\n## Summary\n\n- This is a template for posts that execute Python code against a remote Databricks cluster\n- Replace this content with your own tutorial or tip\n\n## Demo\n\n::: {#60671f3d .cell execution_count=2}\n``` {.python .cell-code}\nspark.sql(\"SELECT current_catalog(), current_database()\").show()\n```\n\n::: {.cell-output .cell-output-stdout}\n```\n+-----------------+----------------+\n|current_catalog()|current_schema()|\n+-----------------+----------------+\n|   hive_metastore|         default|\n+-----------------+----------------+\n\n```\n:::\n:::\n\n\n## References & Further Reading\n\n",
+    "supporting": [
+      "index_files"
+    ],
+    "filters": [],
+    "includes": {}
+  }
+}
