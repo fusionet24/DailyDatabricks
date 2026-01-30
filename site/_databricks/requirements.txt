@@ -1,0 +1,3 @@
+databricks-connect>=18.0.0
+python-dotenv
+ipykernel
