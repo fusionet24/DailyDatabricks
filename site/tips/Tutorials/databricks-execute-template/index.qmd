@@ -1,0 +1,36 @@
+---
+title: "Databricks Execution Template"
+description: "Template for posts that execute code against a Databricks cluster"
+date-modified: "30/01/2026"
+date-format: "DD/MM/YYYY"
+draft: true
+categories: [Tutorials]
+execute:
+  enabled: true
+---
+
+```{python}
+#| include: false
+#| label: setup
+import sys, os
+sys.path.insert(0, os.path.abspath("../../.."))
+from _databricks import get_spark_session
+spark = get_spark_session()
+```
+
+::: {.callout-note title="Live Execution" appearance="simple"}
+All code in this post is rendered against a Databricks workspace before publication.
+:::
+
+## Summary
+
+- This is a template for posts that execute Python code against a remote Databricks cluster
+- Replace this content with your own tutorial or tip
+
+## Demo
+
+```{python}
+spark.sql("SELECT current_catalog(), current_database()").show()
+```
+
+## References & Further Reading
