@@ -225,6 +225,18 @@ TellR generates HTML slides, which means they're easy to share via a link or emb
 TellR respects your Unity Catalog permissions. If you can't see certain data in the Catalog Explorer, TellR won't be able to query it either. This means your presentations are always within your governance boundaries.
 :::
 
+## Cleanup & Cost Management
+
+::: {.callout-important title="Stop Resources to Avoid Costs" appearance="simple"}
+Once you're finished with this tutorial, make sure you stop the following resources to avoid incurring unnecessary costs:
+
+1. **Stop the Lakebase** — Navigate to **SQL Warehouses** in your workspace and stop the Lakebase database (`tellr-db`) that was created during installation
+2. **Stop the Databricks App** — Go to **Apps**, find the **tellr** app, and stop it
+3. **Stop the Genie data warehouse** — The Genie space uses an attached SQL warehouse; make sure it is stopped as well
+
+You should also consider **deleting the Genie space** you created if you no longer need it, as an active Genie space with an attached warehouse can continue to incur compute costs.
+:::
+
 ## References & Further Reading
 
 -   [TellR GitHub Repository](https://github.com/robertwhiffin/ai-slide-generator)
