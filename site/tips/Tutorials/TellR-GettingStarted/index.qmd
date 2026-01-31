@@ -127,6 +127,22 @@ tellr.create(
 Replace `you@example.com` with your actual Databricks username. This is the workspace path where TellR's application files will be stored.
 :::
 
+::: {.callout-warning title="Deployment Error: Token Passthrough Not Enabled" collapse="true"}
+You may encounter this error during deployment:
+
+```
+Deployment failed: Databricks Apps - user token passthrough feature
+is not enabled for organization <org_id>.
+Config: host=<workspace_url>, auth_type=runtime
+```
+
+This means **On Behalf Of (OBO) authentication** is not enabled for your workspace. Databricks Apps require this feature so the app can act on behalf of the logged-in user when accessing data through Unity Catalog.
+
+To resolve this, a workspace administrator needs to enable the **On Behalf Of auth** setting for Databricks Apps. See the screenshot below for where to find this in the admin console.
+
+![Enabling On Behalf Of authentication for Databricks Apps](Assets/ENable On Behalf of.png)
+:::
+
 ![Installing TellR in a Databricks notebook](Assets/tellr-install.png)
 
 ## Step 2: Create a Genie Space
