@@ -45,7 +45,6 @@ dbutils.notebook.entry_point.getDbutils().notebook().getContext()
 dbutils.notebook.entry_point.getDbutils().notebook().getContext() \
   .notebookPath() \
   .toString() 
-
 ```
 
 ### Convert Context Json Object to Dictionary
@@ -69,7 +68,6 @@ dbutils.notebook.getContext()
 
 dbutils.notebook.getContext().notebookPath \
   .toString() 
-
 ```
 
 ### Convert Json Object to Dictionary
@@ -107,7 +105,6 @@ ls(pattern = "^spark")
 [8] "spark.databricks.token"                                                
 [9] "spark.scheduler.pool"     
 [10] "orgId"
-
 ```
 
 ### Turn the spark variables into a Key Value list
@@ -121,9 +118,6 @@ spark_values <- mget(spark_names)
 
 # Convert the named vector to a list
 spark_list <- as.list(spark_values)
-
-
-
 ```
 :::
 
