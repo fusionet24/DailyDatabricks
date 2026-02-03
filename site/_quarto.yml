@@ -57,7 +57,7 @@ website:
   page-navigation: true
   back-to-top-navigation: true
   reader-mode: true
-  page-footer: "Copyright 2023 RapidData LTD" 
+  page-footer: "Copyright 2023-2025 RapidData LTD" 
   repo-url: https://github.com/fusionet24/dailydatabricks
   repo-actions: [edit, issue]
   repo-subdir: site

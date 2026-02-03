@@ -2,7 +2,7 @@
 title: "Getting Started with TellR: AI-Powered Slides from Databricks"
 subtitle: "Generate presentation-ready slides from the Bakehouse sample dataset using TellR"
 description: "Learn how to install and use TellR, an agentic Databricks App that turns your data into interactive slide decks through natural language."
-date-modified: "31/01/2026"
+date-modified: "01/31/2026"
 date-format: "DD/MM/YYYY"
 categories: [TellR, Databricks Apps, AI, Tutorials]
 image: Assets/tellr-landing-page.png
@@ -24,7 +24,7 @@ execute:
 #| include: false
 #| label: setup
 import sys, os
-sys.path.insert(0, os.path.abspath("../../.."))
+sys.path.insert(0, os.path.abspath("../.."))
 from _databricks import get_spark_session
 spark = get_spark_session()
 ```
@@ -131,7 +131,7 @@ Replace `you@example.com` with your actual Databricks username. This is the work
 ::: {.callout-warning title="Deployment Error: Token Passthrough Not Enabled" collapse="true"}
 You may encounter this error during deployment:
 
-```
+```         
 Deployment failed: Databricks Apps - user token passthrough feature
 is not enabled for organization <org_id>.
 Config: host=<workspace_url>, auth_type=runtime
@@ -141,7 +141,7 @@ This means **On Behalf Of (OBO) authentication** is not enabled for your workspa
 
 To resolve this, a workspace administrator needs to enable the **On Behalf Of auth** setting for Databricks Apps. See the screenshot below for where to find this in the admin console.
 
-![Enabling On Behalf Of authentication for Databricks Apps](Assets/ENable On Behalf of.png)
+![Enabling On Behalf Of authentication for Databricks Apps](Assets/ENable%20On%20Behalf%20of.png)
 :::
 
 ![Installing TellR in a Databricks notebook](Assets/DatabricksTellRNotebookSetup.png)
@@ -158,7 +158,7 @@ The Lakebase should show a status of **Available** with PostgreSQL version 16. T
 
 When you first open TellR, you'll be prompted to authorize the app to act on your behalf. This is the **On Behalf Of (OBO)** authentication flow — TellR needs permission to read Unity Catalog tables and manage model serving endpoints under your identity.
 
-![Permission request when first opening TellR](Assets/give permissions on app.png)
+![Permission request when first opening TellR](Assets/give%20permissions%20on%20app.png)
 
 Review the requested permissions:
 
@@ -205,12 +205,6 @@ TellR queries your data through Genie spaces. We need to create one for the Bake
 The more descriptive your Genie space instructions are, the better TellR will understand your data. You can add a description like: *"Sales and customer data for a bakery franchise business. Includes transactions, customer details, and supplier information."*
 :::
 
-::: {.callout-tip title="Verify Your Genie Space" appearance="simple"}
-You can test your Genie space directly in the Databricks UI by asking it questions like "What is the total revenue?" or "Show me the top 10 customers by purchase count." This helps confirm the data is accessible before using it in TellR.
-
-![The underlying Genie space querying Bakehouse data](Assets/export in undelrying databricks genie space.png)
-:::
-
 ## Step 6: Create a Custom Slide Style
 
 Before creating a profile, let's set up a custom slide style. TellR comes with a **System Default** style, but you can create your own to match your branding.
@@ -248,13 +242,13 @@ Fill in the **Data Description (for AI Agent)** field to give TellR's AI context
 
 Choose the **DailyDatabricks** style we created in Step 6. This controls the visual appearance of generated slides.
 
-![Step 3: Select the DailyDatabricks slide style](Assets/create profile style selector.png)
+![Step 3: Select the DailyDatabricks slide style](Assets/create%20profile%20style%20selector.png)
 
 ### Step 7.4: Select Deck Prompt
 
 Choose a deck prompt template that matches the type of presentation you want to create. For this example, we'll select **Quarterly Business Review** which structures the deck around performance metrics, achievements, challenges, and strategic recommendations.
 
-![Step 4: Select a deck prompt template](Assets/create profile deck prompt.png)
+![Step 4: Select a deck prompt template](Assets/create%20profile%20deck%20prompt.png)
 
 ### Step 7.5: Review and Save
 
@@ -264,7 +258,7 @@ Review your profile settings and save. You can always come back to edit these la
 
 After creation, you can view your profile details at any time by clicking on it in the Profiles tab. This shows the complete configuration at a glance.
 
-![Viewing the BakeHouse profile configuration](Assets/View Profile Information.png)
+![Viewing the BakeHouse profile configuration](Assets/View%20Profile%20Information.png)
 
 Notice the profile shows:
 
@@ -287,11 +281,11 @@ Type a prompt describing the presentation you want. For example:
 
 TellR will begin querying your Genie space and generating slides. You can watch the process in the chat panel — it makes multiple calls to `query_genie_space` to gather the data it needs.
 
-![TellR generating slides from Bakehouse data via Genie queries](Assets/generator of slides.png)
+![TellR generating slides from Bakehouse data via Genie queries](Assets/generator%20of%20slides.png)
 
 After a few moments, the slides appear in the preview panel on the right. You can select individual slides, review the generated content, and continue the conversation to refine them.
 
-![The generated FY2025 Strategic Position Review presentation](Assets/first attemp .png)
+![The generated FY2025 Strategic Position Review presentation](Assets/first%20attemp%20.png)
 
 The generated deck includes:
 
@@ -303,6 +297,12 @@ The generated deck includes:
 ::: {.callout-tip title="Iterative Refinement" appearance="simple"}
 You don't need to get your prompt perfect the first time. TellR supports conversational editing — ask it to change colours, swap chart types, add comparisons, or restructure the narrative. Think of it like chatting with a presentation designer.
 :::
+::: {.callout-tip title="Verify Your Genie Space Queries" appearance="simple"}
+You can check the actual queries to your Genie space directly by clicking the database link on a slide that will take you to the Databricks UI. This helps validate and verify the AI generated queries being used in TellR.
+
+![The underlying Genie space querying Bakehouse data](Assets/export%20in%20undelrying%20databricks%20genie%20space.png)
+:::
+
 
 ## Step 10: Export and Share
 
@@ -314,9 +314,9 @@ TellR provides two export options via the **Export** button in the top-right of 
 ::: {.callout-tip title="Example Output" appearance="simple"}
 Here's the actual HTML slide deck generated from the Bakehouse dataset in this tutorial. You can scroll through and interact with the charts:
 
-<iframe src="Assets/fy2025-strategic-position-review.html" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
+<iframe src="Assets/fy2025-strategic-position-review.html" style="width: 1280px; height: 760px; zoom: 0.55; border: 1px solid #ddd; border-radius: 8px;"></iframe>
 
-You can also download the [PDF version](Assets/FY2025 Strategic Position Review_2026-01-31T23-01-49.pdf) of this presentation.
+You can also download the [PDF version](Assets/FY2025%20Strategic%20Position%20Review_2026-01-31T23-01-49.pdf) of this presentation.
 :::
 
 ## Tips & Tricks
@@ -338,9 +338,9 @@ TellR respects your Unity Catalog permissions. If you can't see certain data in 
 ::: {.callout-important title="Stop Resources to Avoid Costs" appearance="simple"}
 Once you're finished with this tutorial, make sure you stop the following resources to avoid incurring unnecessary costs:
 
-1. **Stop the Lakebase** — Navigate to **SQL Warehouses** in your workspace and stop the Lakebase database (`tellr-db`) that was created during installation
-2. **Stop the Databricks App** — Go to **Apps**, find the **tellr** app, and stop it
-3. **Stop the Genie data warehouse** — The Genie space uses an attached SQL warehouse; make sure it is stopped as well
+1.  **Stop the Lakebase** — Navigate to **SQL Warehouses** in your workspace and stop the Lakebase database (`tellr-db`) that was created during installation
+2.  **Stop the Databricks App** — Go to **Apps**, find the **tellr** app, and stop it
+3.  **Stop the Genie data warehouse** — The Genie space uses an attached SQL warehouse; make sure it is stopped as well
 
 You should also consider **deleting the Genie space** you created if you no longer need it, as an active Genie space with an attached warehouse can continue to incur compute costs.
 :::
