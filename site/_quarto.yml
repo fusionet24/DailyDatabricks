@@ -67,6 +67,9 @@ format:
       dark: darkly
     css: styles.css
     toc: true
+    include-in-header:
+      text: |
+        <meta http-equiv="Content-Security-Policy" content="frame-src 'self' https://www.youtube.com https://youtube.com https://www.youtube-nocookie.com;">
 
 editor: visual
 
