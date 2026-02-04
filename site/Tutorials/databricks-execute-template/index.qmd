@@ -13,7 +13,7 @@ execute:
 #| include: false
 #| label: setup
 import sys, os
-sys.path.insert(0, os.path.abspath("../../.."))
+sys.path.insert(0, os.path.abspath("../.."))
 from _databricks import get_spark_session
 spark = get_spark_session()
 ```
@@ -24,8 +24,8 @@ All code in this post is rendered against a Databricks workspace before publicat
 
 ## Summary
 
-- This is a template for posts that execute Python code against a remote Databricks cluster
-- Replace this content with your own tutorial or tip
+-   This is a template for posts that execute Python code against a remote Databricks cluster
+-   Replace this content with your own tutorial or tip
 
 ## Demo
 

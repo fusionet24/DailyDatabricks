@@ -1,1 +1,1 @@
--r ../../../_databricks/requirements.txt
+-r ../../_databricks/requirements.txt
