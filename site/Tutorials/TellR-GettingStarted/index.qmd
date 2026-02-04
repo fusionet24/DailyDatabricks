@@ -321,12 +321,8 @@ You can also download the [PDF version](Assets/FY2025%20Strategic%20Position%20R
 
 ## Tips & Tricks
 
-::: {.callout-tip title="Prompt-Only Mode" appearance="simple"}
-If you don't have a Genie space set up, TellR can still generate slides from descriptive prompts. Skip the Genie space step in the profile wizard to create a prompt-only profile. It won't pull live data, but it's useful for creating general-purpose presentations quickly.
-:::
-
 ::: {.callout-tip title="Multiple Profiles" appearance="simple"}
-Create different profiles for different use cases — one for executive reviews, another for team updates, another for customer-facing decks. Each can have its own Genie space, style, and deck prompt.
+Create different profiles for different use cases — one for executive reviews, another for team updates, another for customer-facing decks. Each can have its own style, and deck prompt.
 :::
 
 ::: {.callout-note title="Unity Catalog Permissions" appearance="simple"}
