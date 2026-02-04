@@ -1,0 +1,5 @@
+{
+  "globalHeaders": {
+    "Content-Security-Policy": "default-src 'self'; frame-src 'self' https://www.youtube.com https://youtube.com https://www.youtube-nocookie.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://s3.amazonaws.com https://*.mailchimp.com https://*.list-manage.com; style-src 'self' 'unsafe-inline' https://*.mailchimp.com; img-src 'self' data: https://*.intuit.com https://*.mailchimp.com; font-src 'self' data:; connect-src 'self' https://*.list-manage.com; form-action 'self' https://*.list-manage.com"
+  }
+}
