@@ -38,7 +38,7 @@ jobs:
     - name: Setup post venvs and re-render
       if: inputs.rerender == true
       run: |
-        for req_file in $(find site/tips -name requirements.txt); do
+        for req_file in $(find site/tips site/Tutorials -name requirements.txt); do
           post_dir=$(dirname "$req_file")
           python3 -m venv "$post_dir/.venv"
           source "$post_dir/.venv/bin/activate"

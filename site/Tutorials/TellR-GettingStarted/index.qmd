@@ -43,7 +43,7 @@ All the code in this tutorial post is rendered against a Databricks workspace be
 
 ## Video Walkthrough
 
-{{< video https://www.youtube.com/watch?v=VIDEO_ID >}}
+{{< video https://www.youtube.com/watch?v=oBGvCpruLkU >}}
 
 ## What is TellR?
 

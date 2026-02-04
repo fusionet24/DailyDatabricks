@@ -40,9 +40,8 @@ website:
         - text: "---"
         - section: "Tutorials"
           contents:
-            - href: document4.qmd
-            - href: document5.qmd
-            - href: document6.qmd
+            - href: Tutorials/TellR-GettingStarted/index.qmd
+              text: "TellR: Getting Started"
         - section: "NewsLetter"
           contents:
             - href: subscribe.html

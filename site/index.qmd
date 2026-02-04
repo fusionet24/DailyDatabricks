@@ -2,7 +2,9 @@
 title: "Databricks Tips, Tricks and Hacks"
 listing:
   id: tip-listing
-  contents: tips
+  contents:
+    - tips
+    - Tutorials
   categories: true
   type: table
   sort: "date"
