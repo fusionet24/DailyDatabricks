@@ -1,0 +1,136 @@
+---
+title: "Monitoring Your Jobs with Lakeflow System Tables"
+description: "Learn how to use the now GA Lakeflow system tables to monitor job runs, track task performance, and analyse compute costs across your Databricks account."
+date-modified: "07/02/2026"
+date-format: "DD/MM/YYYY"
+categories: [Lakeflow, Observability, Data Engineering]
+toc: true
+toc-title: Navigation
+tags:
+    - databricks
+    - lakeflow
+    - jobs
+    - system-tables
+    - monitoring
+    - observability
+    - tips
+draft: false
+---
+
+## Summary
+
+-   The Lakeflow system tables `jobs`, `job_tasks`, `job_run_timeline`, and `job_task_run_timeline` are now Generally Available as of January 2026
+-   These tables provide account-wide visibility into all job definitions, run history, and task-level execution metrics
+-   Join with `billing.usage` to calculate cost per job run for precise spend attribution
+
+## Introduction
+
+Understanding what your Databricks jobs are doing — and what they are costing you — has always required stitching together information from the Jobs UI, cluster logs, and billing exports. With the GA release of the Lakeflow system tables in January 2026, Databricks now provides a unified, SQL-queryable record of every job and job run across your entire account.
+
+These tables live in the `system.lakeflow` schema (previously called `system.workflow` — the content is identical) and cover all workspaces deployed in the same cloud region. They retain 365 days of data at no additional cost, and they support streaming reads so you can build real-time monitoring pipelines on top of them.
+
+## What Tables Are Available?
+
+The `system.lakeflow` schema contains four GA tables and two in Public Preview:
+
+| Table | Description | Type |
+|---|---|---|
+| **jobs** | All job definitions in your account | SCD2 (slowly changing) |
+| **job_tasks** | Task definitions within each job | SCD2 |
+| **job_run_timeline** | Run-level execution history and metrics | Immutable |
+| **job_task_run_timeline** | Task-level execution history and metrics | Immutable |
+| *pipelines* (Preview) | Pipeline definitions | SCD2 |
+| *pipeline_update_timeline* (Preview) | Pipeline update history | Immutable |
+
+::: {.callout-tip title="Beginner Tip" appearance="simple"}
+The `jobs` table is a slowly changing dimension (SCD2) table. When a job definition changes, a new row is emitted rather than updating the existing one. This means you get a full audit trail of every configuration change.
+:::
+
+## Practical Examples
+
+### Find Failed Jobs in the Last 24 Hours
+
+A quick query to surface recent failures across your account:
+
+``` sql
+SELECT
+    j.name AS job_name,
+    r.run_id,
+    r.result_state,
+    r.termination_code,
+    r.period_start_time,
+    r.period_end_time
+FROM system.lakeflow.job_run_timeline r
+JOIN system.lakeflow.jobs j
+    ON r.workspace_id = j.workspace_id
+    AND r.job_id = j.job_id
+WHERE r.result_state = 'FAILED'
+    AND r.period_start_time > current_timestamp() - INTERVAL 24 HOURS
+ORDER BY r.period_start_time DESC;
+```
+
+### Calculate Cost Per Job Run
+
+One of the most valuable patterns is joining the run timeline with the billing system table to get actual cost per execution:
+
+``` sql
+SELECT
+    j.name AS job_name,
+    r.run_id,
+    r.result_state,
+    SUM(b.usage_quantity * lp.pricing.default) AS estimated_cost
+FROM system.lakeflow.job_run_timeline r
+JOIN system.lakeflow.jobs j
+    ON r.workspace_id = j.workspace_id
+    AND r.job_id = j.job_id
+JOIN system.billing.usage b
+    ON r.job_id = b.usage_metadata.job_id
+    AND r.run_id = b.usage_metadata.job_run_id
+JOIN system.billing.list_prices lp
+    ON b.sku_name = lp.sku_name
+    AND b.usage_date = lp.price_start_time
+GROUP BY j.name, r.run_id, r.result_state
+ORDER BY estimated_cost DESC;
+```
+
+::: {.callout-warning title="Important" appearance="simple"}
+Jobs running on all-purpose (interactive) compute share resources with other workloads, so cost attribution will not be precise. For accurate per-job costing, use dedicated job compute or serverless compute.
+:::
+
+### Monitor Job Duration Trends
+
+Track whether your jobs are getting slower over time:
+
+``` sql
+SELECT
+    j.name AS job_name,
+    DATE(r.period_start_time) AS run_date,
+    AVG(r.run_duration_ms) / 1000 AS avg_duration_seconds,
+    COUNT(*) AS run_count
+FROM system.lakeflow.job_run_timeline r
+JOIN system.lakeflow.jobs j
+    ON r.workspace_id = j.workspace_id
+    AND r.job_id = j.job_id
+WHERE r.period_start_time > current_timestamp() - INTERVAL 30 DAYS
+    AND r.result_state = 'SUCCESS'
+GROUP BY j.name, DATE(r.period_start_time)
+ORDER BY j.name, run_date;
+```
+
+## Access Requirements
+
+To query these tables, you need one of:
+
+-   **Metastore admin** and **account admin** roles, or
+-   Explicit `USE` and `SELECT` grants on the `system.lakeflow` schema
+
+::: {.callout-note title="Regional Scope" appearance="simple"}
+System tables contain records from all workspaces in the same cloud region. To see jobs from another region, query from a workspace deployed in that region.
+:::
+
+## Further Reading
+
+-   [Jobs System Table Reference](https://docs.databricks.com/aws/en/admin/system-tables/jobs)
+-   [Monitoring and Observability for Lakeflow Jobs](https://docs.databricks.com/aws/en/jobs/monitor)
+-   [Lakeflow Jobs Overview](https://docs.databricks.com/aws/en/jobs/)
+-   [January 2026 Release Notes](https://docs.databricks.com/aws/en/release-notes/product/2026/january)

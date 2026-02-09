@@ -1,0 +1,88 @@
+---
+title: "Getting Started with Managed MCP Servers on Databricks"
+description: "Learn how Managed MCP Servers let your AI agents securely connect to Databricks resources and external APIs using the Model Context Protocol."
+date-modified: "07/02/2026"
+date-format: "DD/MM/YYYY"
+categories: [AI, Agents, Unity Catalog]
+toc: true
+toc-title: Navigation
+tags:
+    - databricks
+    - mcp
+    - ai-agents
+    - unity-catalog
+    - generative-ai
+    - tips
+draft: false
+---
+
+## Summary
+
+-   Managed MCP Servers provide ready-to-use connections between your AI agents and Databricks resources like Unity Catalog, Vector Search, and Genie
+-   Four server types are available out of the box: Unity Catalog Functions, Vector Search, Genie Space, and DBSQL
+-   All access is governed by Unity Catalog permissions, so agents can only reach data they are authorised to use
+
+## Introduction
+
+Building AI agents that can interact with your data platform has historically meant writing and maintaining custom tool integrations for every resource your agent needs to reach. With Managed MCP Servers, now in Public Preview as of January 2026, Databricks provides a standardised way for agents to connect to platform resources without custom plumbing.
+
+The [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) is an open-source standard that connects AI agents to tools, resources, and contextual information. The key benefit is standardisation: you build a tool once and any MCP-compatible agent can use it, whether it is something you have built yourself or a third-party agent like Claude Code, Cursor, or Codex.
+
+## What Managed MCP Servers Are Available?
+
+Databricks provides four ready-to-use server types:
+
+| Server Type | What It Does | Access Mode |
+|---|---|---|
+| **Unity Catalog Functions** | Run predefined SQL queries as agent tools | Read |
+| **Vector Search** | Query Vector Search indexes to retrieve relevant documents | Read |
+| **Genie Space** | Analyse structured data using natural language via Genie | Read |
+| **DBSQL** | Run AI-generated SQL to author data pipelines | Read & Write |
+
+Each server enforces Unity Catalog permissions at every call. If a user does not have access to a table, neither does their agent.
+
+::: {.callout-tip title="Pro Tip" appearance="simple"}
+You can connect an agent to multiple servers simultaneously. For example, a customer support agent could use Vector Search for ticket retrieval, Genie for billing queries, and UC Functions for account operations — all in a single conversation.
+:::
+
+## Connecting to a Managed MCP Server
+
+To get started locally, you need Python 3.12+ and the `databricks-mcp` package. Authentication uses OAuth via the Databricks SDK.
+
+``` python
+pip install databricks-mcp mcp>=1.9 databricks-sdk[openai] mlflow>=3.1.0
+```
+
+Once installed, your agent can dynamically discover available tools at runtime by listing what the MCP server exposes. Databricks recommends against hardcoding tool names since the set of available tools may change as new capabilities are added.
+
+``` python
+from databricks_mcp import DatabricksMCPClient
+
+# The client authenticates via Databricks SDK OAuth
+client = DatabricksMCPClient(workspace_url="https://your-workspace.databricks.com")
+
+# Dynamically discover available tools
+tools = await client.list_tools()
+for tool in tools:
+    print(f"Tool: {tool.name} - {tool.description}")
+```
+
+::: {.callout-warning title="Best Practices" appearance="simple"}
+-   **Do not hardcode tool names** — let your agent discover tools dynamically at runtime
+-   **Do not parse tool output programmatically** — output formats may change, so let your LLM interpret responses
+-   **Let the LLM decide** which tools to call based on the user's request and tool descriptions
+:::
+
+## Beyond Managed: Other MCP Options
+
+If the four built-in servers do not cover your use case, Databricks also supports:
+
+-   **External MCP Servers** — connect to MCP servers hosted outside Databricks using managed connections
+-   **Custom MCP Servers** — host your own MCP server as a Databricks App, giving you full control over the tools exposed
+
+## Further Reading
+
+-   [Model Context Protocol (MCP) on Databricks](https://docs.databricks.com/aws/en/generative-ai/mcp/)
+-   [Use Databricks Managed MCP Servers](https://docs.databricks.com/aws/en/generative-ai/mcp/managed-mcp)
+-   [MCP Specification](https://modelcontextprotocol.io/)
+-   [January 2026 Release Notes](https://docs.databricks.com/aws/en/release-notes/product/2026/january)
