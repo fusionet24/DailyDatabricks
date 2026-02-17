@@ -1,0 +1,253 @@
+---
+title: "Notebook Context"
+subtitle: ""
+description: "Learn about the Notebook Context Object and how you can leverage it to enhance your notebook logging and experience."
+date-modified: "10/05/2023"
+date-format: "DD/MM/YYYY"
+categories: [context, notebook,dbutils]
+image: Assets/notebook-context.png
+toc:  true
+toc-title: Navigation
+tags: 
+  - python
+  - Scala
+  - R
+  - spark
+  - basic
+   - decembricks
+---
+
+::: {.callout-note title="Beginner Tip" appearance="simple"}
+This tip is part of the [Decembricks 2024 series](../../#category=Decembricks) to teach a new tip everyday of december.
+:::
+
+# Summary
+
+-   Get Metadata & Context on your current notebook environment
+-   User Credentials (email, IPs, azuread object ids)
+-   Browser details & language
+-   Cluster Ids
+
+# Code
+
+::: panel-tabset
+## Python
+
+### Get Context Object
+
+``` python
+dbutils.notebook.entry_point.getDbutils().notebook().getContext()
+```
+
+### Example: Get Notebook Path Property
+
+``` python
+
+dbutils.notebook.entry_point.getDbutils().notebook().getContext() \
+  .notebookPath() \
+  .toString() 
+```
+
+### Convert Context Json Object to Dictionary
+
+``` python
+import json
+json.loads(dbutils.notebook.entry_point.getDbutils().notebook().getContext().toJson())
+```
+
+## Scala
+
+### Get Context Object
+
+``` scala
+dbutils.notebook.getContext()
+```
+
+### Example: Get Notebook Path Property
+
+``` scala
+
+dbutils.notebook.getContext().notebookPath \
+  .toString() 
+```
+
+### Convert Json Object to Dictionary
+
+``` scala
+val context = dbutils.notebook.getContext() // Returns MAP[String,String] no need to map it
+```
+
+## R
+
+R doesn't have dbutils.notebook context object. However, there are several objects located in the R global environment which have properties from the databricks notebook context. We can view these by using the [LS](https://www.rdocumentation.org/packages/base/versions/3.6.2/topics/ls) command with pattern matching
+
+``` r
+
+# List only the objects that begin with "spark"
+ls(pattern = "^spark")
+```
+
+### Example: Get Notebook Path Property
+
+``` r
+ spark.databricks.api.url  
+```
+
+### Sample List of properties
+
+``` r
+[1] "spark.databricks.api.url"                                              
+[2] "spark.databricks.driverNfs.clusterWideVirtualEnv"                      
+[3] "spark.databricks.env"                                                  
+[4] "spark.databricks.inherited.credentials.keys.spark.databricks.api.token"
+[5] "spark.databricks.notebook.id"                                          
+[6] "spark.databricks.notebook.path"                                        
+[7] "spark.databricks.replId"                                               
+[8] "spark.databricks.token"                                                
+[9] "spark.scheduler.pool"     
+[10] "orgId"
+```
+
+### Turn the spark variables into a Key Value list
+
+``` r
+# Get the names of objects that begin with "spark"
+spark_names <- ls(pattern = "^spark")
+
+# Get the values of these objects
+spark_values <- mget(spark_names)
+
+# Convert the named vector to a list
+spark_list <- as.list(spark_values)
+```
+:::
+
+::: {.callout-caution title="Sample Output" appearance="simple" collapse="true"}
+Below is a sample object returned from the notebook context object (some details are sanitized for security) and this is not an exhaustive output of the context output
+
+``` json
+
+{'rootRunId': None,
+ 'currentRunId': None,
+ 'jobGroup': '3390617077668218965_7460294295175766547_89e1d0119f914af39bafdb017336882e',
+ 'tags': {'opId': 'ServerBackend-54787e706ebf268a',
+  'shardName': 'az-eastus-c3',
+  'opTarget': 'com.databricks.backend.common.rpc.InternalDriverBackendMessages$StartRepl',
+  'clusterMemory': '8192',
+  'serverBackendName': 'com.databricks.backend.daemon.driver.DriverCorral',
+  'notebookId': '2048538015852092',
+  'projectName': 'driver',
+  'tier': 'tier-multitenant',
+  'eventWindowTime': '2254196.899999991',
+  'httpTarget': '/notebook/2048538015852092/command/3362446343388373',
+  'commandRunId': 'dddd47ee-68fe-4fd2-9042-fbde8fd28a8e',
+  'buildHash': '',
+  'workspaceRoutingTarget': 'null',
+  'browserHash': '#notebook/2048538015852092/command/3362446343388373',
+  'host': '10.139.64.4',
+  'browserPathName': '/',
+  'notebookLanguage': 'sql',
+  'workspaceRoutingBucket': 'null',
+  'sparkVersion': '12.1.x-scala2.12',
+  'hostName': 'cons-webapp-0',
+  'httpMethod': 'POST',
+  'browserIdleTime': '411',
+  'jettyRpcJettyVersion': '9',
+  'browserLanguage': 'en-GB',
+  'browserTabId': '99fc6c79-18df-4ff9-b0e7-35df3da8bc08',
+  'sourceIpAddress': '<AN_IP>',
+  'loadedUiVersions': 'Map(monolith -> f03dcdb1e979dfefcf2f878284c318bd21970a5d)',
+  'browserUserAgent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36',
+  'orgId': '2675080094955785',
+  'userAgent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36',
+  'clusterId': '0120-154009-7bof0jyo',
+  'serverEventId': 'CgwIusXzngYQ9+mEqAIQgAQYiQE6EKeKn3/v7UOlvUQlALPm2wI=',
+  'rootOpId': 'ServiceMain-8ef19d61f07f0002',
+  'requestIdWasMissing': 'true',
+  'sessionId': 'd9be357a4121697a1de52d1c3b447874315900e2b5a5054b8aa92576f1e865be',
+  'clusterCreator': '<EMAIL_ADDRESS>',
+  'originatedFromEnvoy': 'true',
+  'clientBranchName': 'webapp_2023-01-27_23.45.48Z_master_b5b81920_1040710074',
+  'clientTimestamp': '1675421567053',
+  'clusterType': 'spot',
+  'requestId': 'CgwIusXzngYQ4/r7pwIQgAQYiQE6EKeKn3/v7UOlvUQlALPm2wI=',
+  'browserHasFocus': 'true',
+  'userId': '8925728005363108',
+  'browserIsHidden': 'false',
+  'principalIdpId': '<GUID>',
+  'clientLocale': 'en',
+  'branchName': 'webapp_2023-01-27_23.45.48Z_master_b5b81920_1040710074',
+  'opType': 'ServerBackend',
+  'sourcePortNumber': '0',
+  'user': '<EMAIL_ADDRESS>',
+  'principalIdpObjectId': '<GUID>',
+  'browserHostName': '<WORKSPACE>.azuredatabricks.net',
+  'parentOpId': 'RPCClient-8ef19d61f07f11ae',
+  'jettyRpcType': 'InternalDriverBackendMessages$DriverBackendRequest'},
+ 'extraContext': {'allowStdin': 'true',
+  'non_uc_api_token': '',
+  'commandResultJsonMaxBytes': '20971520',
+  'notebook_path': '/sqlsdamples',
+  'thresholdForStoringInDbfs': '10000',
+  'enableStoringResultsInDbfs': 'true',
+  'api_url': 'https://eastus-c3.azuredatabricks.net',
+  'aclPathOfAclRoot': '/workspace/<ID>',
+  'api_token': '[REDACTED]'},
+ 'credentialKeys': ['adls_aad_token',
+  'adls_gen2_aad_token',
+  'synapse_aad_token']}
+  
+```
+:::
+
+::: {.callout-tip title="Capture your current notebook cell" appearance="simple"}
+See how you can use the [Notebook Context](context.qmd) to capture the [current cell of your notebook]() and leverage it in your applications and logs [here]()
+:::
+
+# Detail
+
+The code snippet `dbutils.notebook.entry_point.getDbutils().notebook().getContext()` may appear intimidating at first glance, but fret not, let's break it down:
+
+1.  **dbutils**: This is a utility library in Databricks, providing a collection of utility functions and classes that help in interacting with Databricks functionalities.
+
+2.  **notebook**: This refers to the notebook module within `dbutils`, which contains methods for interacting with the notebook environment.
+
+3.  **entry_point**: The `entry_point` attribute within the notebook module refers to the starting point of the notebook execution.
+
+4.  **getDbutils**: This is a method call which returns an instance of `dbutils`.
+
+5.  **notebook()**: This method call, following `getDbutils`, returns an instance of the notebook module.
+
+6.  **getContext()**: Finally, this method retrieves the current Notebook Context, encapsulating information like notebook path, user, and other contextual details.
+
+Benefits of Accessing Notebook Context: Accessing the Notebook Context can serve various purposes:
+
+-   **Identifying User Information**: By accessing the Notebook Context, you can retrieve information about the user executing the notebook. This could be useful for auditing or personalizing the notebook behavior based on the user.
+
+-   **Fetching Notebook Path**: If your logic depends on the particular notebook or its location within the Databricks workspace, accessing the Notebook Context is invaluable.
+
+-   **Managing Execution Flow**: Utilizing the Notebook Context can aid in managing the flow of notebook execution, especially in complex, multi-notebook workflows.
+
+# References & Further Reading
+
+### Related Tweets
+
+<blockquote class="twitter-tweet" data-dnt="true" data-theme="light">
+
+<p lang="en" dir="ltr">
+
+⚠ Productionising your <a href="https://twitter.com/databricks?ref_src=twsrc%5Etfw">@Databricks</a> workloads<br><br>This is an essential tip to enhance your logging and monitoring‼<br><br>❔Did you know you can capture context & metadata in <a href="https://twitter.com/hashtag/databricks?src=hash&amp;ref_src=twsrc%5Etfw">#databricks</a> notebook? <br><br>Information such as<br>📔Current Databricks notebook<br>⛏Job Ids<br>👩‍💻User<br>🌐Browser & more🔽
+
+</p>
+
+--- Daily Databricks (@DailyDatabricks) <a href="https://twitter.com/DailyDatabricks/status/1535319517609459715?ref_src=twsrc%5Etfw">June 10, 2022</a>
+
+</blockquote>
+
+```{=html}
+<script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+```
+
+### Links
+
+[Retriving child notebooks context objects](https://stackoverflow.com/questions/69158343/how-to-get-databricks-notebook-context-of-child-notebook)

@@ -1,0 +1,33 @@
+{
+  "name": "dailydatabricks-video",
+  "version": "1.0.0",
+  "description": "DailyDatabricks marketing videos built with Remotion",
+  "scripts": {
+    "studio": "remotion studio",
+    "render": "remotion render DeltaMetadataLogging out/delta-metadata-video.mp4",
+    "render:carousel": "remotion still DataSourceCarousel out/carousel/slide-0.png --frame=0 --scale=2 && remotion still DataSourceCarousel out/carousel/slide-1.png --frame=1 --scale=2 && remotion still DataSourceCarousel out/carousel/slide-2.png --frame=2 --scale=2 && remotion still DataSourceCarousel out/carousel/slide-3.png --frame=3 --scale=2 && remotion still DataSourceCarousel out/carousel/slide-4.png --frame=4 --scale=2 && remotion still DataSourceCarousel out/carousel/slide-5.png --frame=5 --scale=2",
+    "render:serverless": "remotion still ServerlessComputeCarousel out/serverless/slide-0.png --frame=0 --scale=2 && remotion still ServerlessComputeCarousel out/serverless/slide-1.png --frame=1 --scale=2 && remotion still ServerlessComputeCarousel out/serverless/slide-2.png --frame=2 --scale=2 && remotion still ServerlessComputeCarousel out/serverless/slide-3.png --frame=3 --scale=2 && remotion still ServerlessComputeCarousel out/serverless/slide-4.png --frame=4 --scale=2 && remotion still ServerlessComputeCarousel out/serverless/slide-5.png --frame=5 --scale=2",
+    "render:tls-cert": "remotion still TlsCertCarousel out/tls-cert/slide-0.png --frame=0 --scale=2 && remotion still TlsCertCarousel out/tls-cert/slide-1.png --frame=1 --scale=2 && remotion still TlsCertCarousel out/tls-cert/slide-2.png --frame=2 --scale=2 && remotion still TlsCertCarousel out/tls-cert/slide-3.png --frame=3 --scale=2 && remotion still TlsCertCarousel out/tls-cert/slide-4.png --frame=4 --scale=2 && remotion still TlsCertCarousel out/tls-cert/slide-5.png --frame=5 --scale=2",
+    "render:tellr": "remotion still TellRCarousel out/tellr/slide-0.png --frame=0 --scale=2 && remotion still TellRCarousel out/tellr/slide-1.png --frame=1 --scale=2 && remotion still TellRCarousel out/tellr/slide-2.png --frame=2 --scale=2 && remotion still TellRCarousel out/tellr/slide-3.png --frame=3 --scale=2 && remotion still TellRCarousel out/tellr/slide-4.png --frame=4 --scale=2 && remotion still TellRCarousel out/tellr/slide-5.png --frame=5 --scale=2",
+    "render:delta-rs-intro": "remotion still DeltaRSIntroCarousel out/delta-rs-intro/slide-0.png --frame=0 --scale=2 && remotion still DeltaRSIntroCarousel out/delta-rs-intro/slide-1.png --frame=1 --scale=2 && remotion still DeltaRSIntroCarousel out/delta-rs-intro/slide-2.png --frame=2 --scale=2 && remotion still DeltaRSIntroCarousel out/delta-rs-intro/slide-3.png --frame=3 --scale=2 && remotion still DeltaRSIntroCarousel out/delta-rs-intro/slide-4.png --frame=4 --scale=2 && remotion still DeltaRSIntroCarousel out/delta-rs-intro/slide-5.png --frame=5 --scale=2",
+    "render:delta-rs-code": "remotion still DeltaRSCodeCarousel out/delta-rs-code/slide-0.png --frame=0 --scale=2 && remotion still DeltaRSCodeCarousel out/delta-rs-code/slide-1.png --frame=1 --scale=2 && remotion still DeltaRSCodeCarousel out/delta-rs-code/slide-2.png --frame=2 --scale=2 && remotion still DeltaRSCodeCarousel out/delta-rs-code/slide-3.png --frame=3 --scale=2 && remotion still DeltaRSCodeCarousel out/delta-rs-code/slide-4.png --frame=4 --scale=2 && remotion still DeltaRSCodeCarousel out/delta-rs-code/slide-5.png --frame=5 --scale=2",
+    "render:delta-rs-comparison": "remotion still DeltaRSComparisonCarousel out/delta-rs-comparison/slide-0.png --frame=0 --scale=2 && remotion still DeltaRSComparisonCarousel out/delta-rs-comparison/slide-1.png --frame=1 --scale=2 && remotion still DeltaRSComparisonCarousel out/delta-rs-comparison/slide-2.png --frame=2 --scale=2 && remotion still DeltaRSComparisonCarousel out/delta-rs-comparison/slide-3.png --frame=3 --scale=2 && remotion still DeltaRSComparisonCarousel out/delta-rs-comparison/slide-4.png --frame=4 --scale=2 && remotion still DeltaRSComparisonCarousel out/delta-rs-comparison/slide-5.png --frame=5 --scale=2",
+    "render:delta-rs-video": "remotion render DeltaRSVideo out/delta-rs-video.mp4",
+    "render:logo-reveal": "remotion render LogoRevealVideo out/logo-reveal.mp4",
+    "render:end-card": "remotion still EndCardGenerator out/end-card.png --frame=0",
+    "render:thumbnail": "remotion still VideoThumbnail out/thumbnail.png --frame=0",
+    "build": "remotion bundle"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.408",
+    "@remotion/google-fonts": "4.0.408",
+    "@remotion/transitions": "4.0.408",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "remotion": "4.0.408"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "typescript": "^5.0.0"
+  }
+}

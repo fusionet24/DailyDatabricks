@@ -27,20 +27,19 @@ This tip is part of the [Decembricks 2024 series](../../#category=Decembricks) t
 -   **Reflection Magic**: Uses reflection to introspect classes, searching for `unittest.TestCase` subclasses.
 -   **Test Suite Management**: Organizes tests into a suite for easier management.
 
-
 # Introduction
+
 Have you ever had to define a unit test suite and got fed up with having to create a list of the unit test classes to include into the suite for running? Well this tip is for you, it looks up the objects defined in the current namespace that are of type UnitTest case.
 
 # Code
 
 ## Load All Test Classes from the Current Notebook
 
-
 ::: {.callout-warning title="Update August 2025" appearance="simple"}
-This tip was recently updated due to work going on with the databricks platform it seems the sys.module[__name__] call returns the different module details now. So the below code has been modified to resolve that by using the iPython Users Namespace.
+This tip was recently updated due to work going on with the databricks platform it seems the sys.module\[**name**\] call returns the different module details now. So the below code has been modified to resolve that by using the iPython Users Namespace.
 :::
 
-```python
+``` python
 import unittest
 
 def load_test_classes_from_notebook():
@@ -63,9 +62,7 @@ def load_test_classes_from_notebook():
 suite = load_test_classes_from_notebook()
 runner = unittest.TextTestRunner(verbosity=2)
 runner.run(suite)
-
 ```
-
 
 ### Example Code & Tests
 
@@ -138,8 +135,7 @@ In the spirit of enabling flexible test discovery, this snippet takes advantage 
 -   **Over-Discovery**: This method could inadvertently load experimental or partial test classes, leading to unintended test runs.
 -   **Opaque Testing**: The reliance on reflection makes the test suite implicit and less readable. Reviewers may struggle to understand the source of loaded tests.
 -   **Performance**: The reflective lookup over the entire module can be inefficient, especially in larger projects.
--   *pytest:* Is more likely to align with your requirements and use concepts like fixtures to support you. 
-
+-   *pytest:* Is more likely to align with your requirements and use concepts like fixtures to support you.
 
 ### Links
 

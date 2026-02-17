@@ -1,0 +1,345 @@
+---
+title: "Demystifying spark._jvm — PySpark's Bridge to the JVM"
+description: "Understand what spark._jvm is, how the Py4J bridge works, the difference between _jvm and _jsc, and what Spark Connect means for the future."
+date-modified: "19/02/2026"
+date-format: "DD/MM/YYYY"
+categories: [pyspark, internals, Py4J]
+toc: true
+toc-title: Navigation
+tags:
+  - databricks
+  - python
+  - spark
+  - pyspark
+  - jvm
+  - py4j
+  - internals
+draft: true
+---
+
+# Summary
+
+-   **`spark._jvm`** is a Py4J gateway that lets PySpark call any Java class running inside the Spark JVM — think of it as a phone line from Python to Java.
+-   **`_jvm` vs `_jsc`**: `_jvm` gives you access to the *entire* JVM (any Java class), while `_jsc` gives you the specific `JavaSparkContext` instance that powers Spark operations.
+-   **It is a private API** (underscore prefix) with no stability guarantees — your code may break across Spark versions.
+-   **Spark Connect (Databricks Runtime 14.x+) removes `_jvm` entirely**, replacing the Py4J socket bridge with gRPC. Plan your migration now.
+
+# Introduction
+
+Apache Spark is written in Scala and runs on the Java Virtual Machine (JVM). PySpark, the Python API for Spark, doesn't run on the JVM at all — it runs in a standard CPython process. So how does a Python call like `df.filter(col("age") > 25)` end up executing distributed computation on JVM-based executors?
+
+The answer is **Py4J** — an open-source library that enables Python programs to access Java objects running in a JVM through socket-based communication. When you create a `SparkSession` in PySpark, a JVM process is launched behind the scenes, and Py4J establishes a bridge between your Python process and that JVM. The `_jvm` attribute is your direct handle to that bridge.
+
+Understanding this bridge matters because:
+
+- Many advanced PySpark patterns (accessing Hadoop APIs, calling custom JARs, using internal Spark classes) require `_jvm`
+- Debugging serialization errors, thread issues, and memory leaks often traces back to the Py4J bridge
+- Spark Connect is fundamentally changing this architecture — code that uses `_jvm` will break
+
+# The Py4J Architecture
+
+When PySpark starts up, a carefully orchestrated handshake establishes the Python-to-JVM connection:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        PYTHON PROCESS                           │
+│                                                                 │
+│  SparkSession / SparkContext                                    │
+│    ├── _gateway  (Py4J JavaGateway — manages the connection)    │
+│    ├── _jvm      (JVMView — access any Java class)             │
+│    └── _jsc      (JavaSparkContext — the Spark instance)        │
+│              │                                                  │
+│              │  TCP Socket (Py4J protocol)                      │
+│              ▼                                                  │
+├─────────────────────────────────────────────────────────────────┤
+│                        JVM PROCESS                              │
+│                                                                 │
+│  GatewayServer (Py4J)                                           │
+│    └── PythonGatewayServer (Spark)                              │
+│          └── JavaSparkContext                                    │
+│                └── SparkContext (Scala)                          │
+│                      └── Executors, DAGScheduler, etc.          │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## The Startup Sequence
+
+1. PySpark calls `launch_gateway()` (defined in `pyspark/java_gateway.py`)
+2. This launches `bin/spark-submit`, which starts a JVM process
+3. The JVM instantiates `PythonGatewayServer`, which creates a Py4J `GatewayServer`
+4. The `GatewayServer` writes a port number and authentication secret to a temporary file
+5. Back in Python, `launch_gateway()` reads that file and connects via a `JavaGateway` (or `ClientServer` in newer versions)
+6. The `_gateway`, `_jvm`, and `_jsc` attributes are populated on `SparkContext`
+
+Every call you make through `_jvm` travels over this TCP socket — Python objects are serialized following the Py4J protocol, transmitted to the JVM, deserialized, the Java method executes, and the result travels back the same way.
+
+::: {.callout-note title="Deep Dive: Socket Communication" appearance="simple" collapse="true"}
+Unlike JPype (which embeds the JVM directly in the Python process), Py4J keeps Python and the JVM in **separate processes**. This means:
+
+- **Memory isolation**: A crash in one process doesn't take down the other
+- **Serialization cost**: Every cross-process call involves serialization/deserialization over a socket
+- **Type mapping**: Py4J automatically converts Java collections — `Arrays` become Python sequences, `Lists` become `MutableSequences`, `Maps` become `MutableMappings`
+- **Binary data**: Java `byte[]` arrays are passed **by value** as Python `bytes` objects (disconnected copies, not live references)
+- **Connection pooling**: `GatewayClient` maintains a thread-safe pool of connections — multiple threads can access the JVM concurrently without bottlenecking on a single connection
+:::
+
+# The Object Hierarchy: `_gateway`, `_jvm`, `_jsc`
+
+These three attributes live on `SparkContext` (and are accessible through `SparkSession` via `spark.sparkContext`). They each serve a different purpose:
+
+| Attribute | Py4J Type | What It Gives You | Analogy |
+|-----------|-----------|-------------------|---------|
+| `_gateway` | `JavaGateway` | The Py4J connection itself — manages sockets, authentication, and the connection pool | The phone line |
+| `_jvm` | `JVMView` | Access to **any** Java class in the JVM via reflection — static methods, constructors, fields | The entire phone book |
+| `_jsc` | `JavaObject` | The underlying `JavaSparkContext` instance — the JVM-side object that powers RDD operations | One specific contact |
+
+## `_gateway` — The Connection
+
+``` python
+# The raw Py4J gateway — you rarely need this directly
+gateway = spark.sparkContext._gateway
+print(type(gateway))
+# <class 'py4j.java_gateway.JavaGateway'>
+```
+
+This is the lowest level — it manages the socket pool and authentication. You almost never interact with it directly unless you're debugging connection issues.
+
+## `_jvm` — The Entire JVM
+
+``` python
+# Access any Java class through the package hierarchy
+jvm = spark.sparkContext._jvm
+
+# Static method call
+version = jvm.java.lang.System.getProperty("java.version")
+
+# Instantiate a Java object
+array_list = jvm.java.util.ArrayList()
+
+# Access Spark internals
+jvm.org.apache.spark.SparkContext.getOrCreate()
+```
+
+`_jvm` is the most commonly used of the three. It provides a `JVMView` that lets you navigate the full Java class hierarchy using dot notation — `jvm.org.apache.spark.whatever` maps directly to the Java package `org.apache.spark.whatever`.
+
+## `_jsc` — The JavaSparkContext
+
+``` python
+# The JVM-side SparkContext that powers everything
+jsc = spark.sparkContext._jsc
+print(type(jsc))
+# <class 'py4j.java_gateway.JavaObject'>
+
+# Call methods on the JavaSparkContext
+app_name = jsc.appName()
+master = jsc.master()
+```
+
+While `_jvm` gives you access to *any* Java class, `_jsc` is specifically the `JavaSparkContext` instance — the object that PySpark delegates to for core Spark operations like creating RDDs and managing the cluster connection.
+
+::: {.callout-tip title="Quick Rule of Thumb" appearance="simple"}
+- Need to call a **Java class** (Hadoop, custom JAR, java.util)? Use `_jvm`
+- Need to call a **SparkContext method** that isn't exposed in PySpark? Use `_jsc`
+- Debugging **connection issues**? Check `_gateway`
+:::
+
+# Practical Examples
+
+## Access Java System Properties
+
+``` python
+jvm = spark.sparkContext._jvm
+
+# Get the Java version running your Spark cluster
+java_version = jvm.java.lang.System.getProperty("java.version")
+print(f"Java version: {java_version}")
+# Java version: 1.8.0_345
+
+# Get the OS name
+os_name = jvm.java.lang.System.getProperty("os.name")
+print(f"OS: {os_name}")
+# OS: Linux
+```
+
+## Instantiate Java Objects
+
+``` python
+jvm = spark.sparkContext._jvm
+
+# Create a Java ArrayList
+array_list = jvm.java.util.ArrayList()
+array_list.add("hello")
+array_list.add("world")
+print(array_list.size())  # 2
+print(array_list.get(0))  # hello
+
+# Create a Java HashMap
+hash_map = jvm.java.util.HashMap()
+hash_map.put("key", "value")
+print(hash_map.get("key"))  # value
+```
+
+## Access Hadoop FileSystem
+
+This is one of the most common real-world uses of `_jvm` — interacting with the Hadoop filesystem API for operations not directly exposed in PySpark:
+
+``` python
+jvm = spark.sparkContext._jvm
+hadoop_conf = jvm.org.apache.hadoop.conf.Configuration()
+fs = jvm.org.apache.hadoop.fs.FileSystem.get(hadoop_conf)
+
+# List files in a directory
+path = jvm.org.apache.hadoop.fs.Path("/tmp/")
+file_statuses = fs.listStatus(path)
+for status in file_statuses:
+    print(f"{status.getPath()} - {status.getLen()} bytes")
+
+# Check if a path exists
+exists = fs.exists(jvm.org.apache.hadoop.fs.Path("/tmp/my_file.parquet"))
+print(f"File exists: {exists}")
+```
+
+## Call a Custom JAR Class
+
+If you've added a custom JAR to your Spark cluster, you can call its classes directly:
+
+``` python
+jvm = spark.sparkContext._jvm
+
+# Call a static method on a class from your custom JAR
+# (assumes the JAR is on the classpath)
+result = jvm.com.mycompany.utils.DataValidator.validate("input_data")
+
+# Instantiate a class from your JAR
+processor = jvm.com.mycompany.etl.CustomProcessor()
+processor.setConfig("param1", "value1")
+output = processor.run()
+```
+
+## Access Spark Internal Classes
+
+``` python
+jvm = spark.sparkContext._jvm
+
+# Access Spark's internal serialization utilities
+ser_de = jvm.org.apache.spark.api.python.SerDe
+
+# Access the Spark version
+version = jvm.org.apache.spark.SPARK_VERSION.toString()
+print(f"Spark version: {version}")
+```
+
+::: {.callout-note title="Deep Dive: How PySpark ML Uses _jvm Internally" appearance="simple" collapse="true"}
+PySpark's machine learning library (`pyspark.ml`) is a great example of `_jvm` in production use. The `JavaWrapper` base class uses `_jvm` to bridge Python ML objects to their Java/Scala counterparts:
+
+``` python
+# Simplified from pyspark/ml/wrapper.py
+class JavaWrapper:
+    def __init__(self, java_obj=None):
+        self._java_obj = java_obj
+
+    @staticmethod
+    def _new_java_obj(java_class, *args):
+        # Uses _jvm to instantiate a Java ML class
+        sc = SparkContext._active_spark_context
+        java_obj = sc._jvm
+        for name in java_class.split("."):
+            java_obj = getattr(java_obj, name)
+        return java_obj(*args)
+```
+
+Every time you call `LogisticRegression().fit(df)` in PySpark, behind the scenes it's using `_jvm` to create a Java `LogisticRegression` object, transfer parameters across the bridge, call `.fit()` on the JVM side, and wrap the result back in a Python object. This is why PySpark ML models are not picklable in the same way as scikit-learn models — they hold references to live JVM objects.
+:::
+
+# Risks & Caveats
+
+::: {.callout-warning title="Important Considerations" appearance="simple"}
+Before using `_jvm` in your code, understand these risks:
+
+-   **Private API**: The underscore prefix (`_jvm`) signals this is an internal, unsupported API. There are no backward compatibility guarantees. Your code may break silently when upgrading Spark versions.
+-   **Driver-only**: `_jvm` is only available on the driver process. You **cannot** use it inside `map()`, `mapPartitions()`, or UDF functions that run on executors — Py4J objects cannot be serialized and sent to worker nodes.
+-   **Performance overhead**: Every `_jvm` call involves serialization, socket transmission, JVM execution, and deserialization of the result. For hot loops, this is 10-100x slower than native JVM code.
+-   **Memory coordination**: Py4J tracks references to Java objects in Python. When Python garbage-collects a proxy object, it notifies the JVM to release the Java-side reference. Improperly managed references in long-running applications can cause memory leaks on either side.
+:::
+
+``` python
+# This will FAIL on executors:
+def bad_udf(row):
+    # _jvm is not available on worker nodes
+    jvm = spark.sparkContext._jvm  # SerializationError!
+    return jvm.com.mycompany.Utils.transform(row)
+
+# rdd.map(bad_udf)  # Fails with PicklingError
+```
+
+::: {.callout-note title="Deep Dive: Thread Safety" appearance="simple" collapse="true"}
+Thread safety has been a recurring concern with the Py4J bridge:
+
+- **SPARK-2546**: Spark's `Configuration` object is not thread-safe — multiple tasks running in the same JVM can corrupt shared state
+- **Pre-Spark 3.2**: A single JVM thread could be reused across multiple Python threads, causing thread-local variables to leak between unrelated operations
+- **Spark 3.2+**: "Pinned thread mode" is enabled by default, mapping each Python thread to a dedicated JVM thread. This reduces thread-local sharing issues but can increase resource usage
+- **Connection pool accumulation**: In multi-threaded scenarios, each thread acquires its own connection from Py4J's pool. If threads are created and destroyed rapidly, connections can accumulate in the pool's internal deque
+
+If you use `_jvm` in multi-threaded code, be cautious about connection pool growth and ensure proper thread-to-JVM synchronization.
+:::
+
+# Spark Connect & the Future
+
+::: {.callout-caution title="Breaking Change: Databricks Runtime 14.x+" appearance="simple"}
+Starting with **Databricks Runtime 14.0+**, shared clusters use **Spark Connect** by default. Spark Connect fundamentally changes the architecture — it replaces the Py4J socket bridge with **gRPC**, and the Python driver no longer runs in the same process as the Spark driver.
+
+This means **`_jvm` is no longer available**. Attempting to access it produces:
+:::
+
+``` python
+# On Spark Connect (Databricks Runtime 14.x+ shared clusters):
+spark._jvm
+# PySparkAttributeError: [JVM_ATTRIBUTE_NOT_SUPPORTED]
+# Attribute `_jvm` is not supported in Spark Connect
+# as it depends on the JVM. Use the public PySpark API instead.
+```
+
+The following internal attributes are all removed in Spark Connect mode: `_jvm`, `_jsc`, `_jconf`, `_jsparkSession`, `_jreader`, `_jc`, `_jseq`, `_jdf`, `_jmap`, and `_jcols`.
+
+## Why the Change?
+
+Spark Connect decouples the client (your Python code) from the server (the Spark driver):
+
+```
+┌─────────────────────┐            ┌─────────────────────┐
+│   CLASSIC PYSPARK   │            │   SPARK CONNECT     │
+│                     │            │                     │
+│  Python ←──Py4J──→ JVM          │  Python ←──gRPC──→ JVM
+│  (same machine,     │            │  (can be remote,    │
+│   socket bridge)    │            │   no shared memory) │
+│                     │            │                     │
+│  _jvm = JVMView ✓   │            │  _jvm = ERROR ✗     │
+└─────────────────────┘            └─────────────────────┘
+```
+
+This brings real benefits — thin client deployment, language-agnostic access, better security isolation — but at the cost of direct JVM access.
+
+## Impact on Third-Party Libraries
+
+The removal of `_jvm` has had significant downstream impact. Libraries like **SynapseML** (from Microsoft) relied heavily on internal JVM access and had to be substantially rewritten. This is a common pattern — many PySpark libraries that used `_jvm` for advanced functionality were broken by the transition.
+
+## Migration Guidance
+
+-   **Use high-level PySpark APIs**: Most operations that previously required `_jvm` now have public API equivalents
+-   **For Hadoop FS operations**: Use `dbutils.fs` on Databricks instead of `_jvm.org.apache.hadoop.fs`
+-   **For custom JARs**: Consider wrapping Java logic in a Spark UDF registered via `spark.udf.registerJavaFunction()`
+-   **If you still need `_jvm`**: Use single-user (non-shared) compute on Databricks, which does not use Spark Connect
+-   **Long-term**: Plan to eliminate all `_jvm` dependencies — the direction of the ecosystem is firmly toward Spark Connect
+
+# References & Further Reading
+
+-   [Stack Overflow — What is sc._jvm and sc._jsc in Spark?](https://stackoverflow.com/questions/70701681/can-some-explain-what-is-sc-jvm-and-sc-jsc-in-spark-for-what-purpose-these-2)
+-   [Japila — The Internals of Apache Spark](https://books.japila.pl/apache-spark-internals/overview/)
+-   [Py4J Documentation](https://www.py4j.org/)
+-   [Py4J Advanced Topics — Memory Management & Threading](https://www.py4j.org/advanced_topics.html)
+-   [waitingforcode — PySpark and the JVM, Part 1](https://www.waitingforcode.com/pyspark/pyspark-jvm-introduction-1/read)
+-   [waitingforcode — PySpark and the JVM, Part 2](https://www.waitingforcode.com/pyspark/pyspark-jvm-introduction-2/read)
+-   [SteadBytes — PySpark Runtime Architecture](https://steadbytes.com/blog/pyspark-runtime-architecture/)
+-   [Apache Spark Wiki — PySpark Internals](https://cwiki.apache.org/confluence/display/SPARK/PySpark+Internals)
+-   [Databricks KB — JVM_ATTRIBUTE_NOT_SUPPORTED Error](https://kb.databricks.com/unity-catalog/error-jvm_attribute_not_supported)
+-   [How Databricks Runtime 14.x Broke Third-Party PySpark Compatibility](https://semyonsinchenko.github.io/ssinchenko/post/how-databricks-14x-breaks-3dparty-compatibility/)
