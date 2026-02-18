@@ -2,6 +2,7 @@ project:
   type: website
   resources:
     - staticwebapp.config.json
+    - subscribe.html
 
 execute:
   freeze: true
@@ -44,6 +45,8 @@ website:
           contents:
             - href: Tutorials/TellR-GettingStarted/index.qmd
               text: "TellR: Getting Started"
+            - href: Tutorials/DeltaRS-GettingStarted/index.qmd
+              text: "Delta-RS: Getting Started"
         - section: "NewsLetter"
           contents:
             - href: subscribe.html
