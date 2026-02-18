@@ -1,0 +1,296 @@
+---
+title: "Getting Started with Delta-RS: Delta Lake Without Spark"
+subtitle: "Read, write, and manage Delta tables using the deltalake Python library"
+description: "Learn how to use the delta-rs (deltalake) Python library to work with Delta tables without Spark."
+date-modified: "11/02/2026"
+date-format: "DD/MM/YYYY"
+categories: [Delta Lake, delta-rs, Python, Tutorials]
+toc: true
+toc-title: Navigation
+tags:
+  - databricks
+  - delta-lake
+  - delta-rs
+  - deltalake
+  - python
+  - pandas
+  - polars
+draft: true
+execute:
+  enabled: false
+---
+
+```{python}
+#| include: false
+#| label: setup
+import sys, os
+sys.path.insert(0, os.path.abspath("../.."))
+from _databricks import get_spark_session
+spark = get_spark_session()
+```
+
+::: {.callout-note title="Live Execution" appearance="simple"}
+All code in this tutorial is rendered against a Databricks workspace before publication. The delta-rs examples demonstrate that you **do not need Spark** to read, write, or manage Delta tables — only the initial data extraction uses Spark.
+:::
+
+## Summary
+
+-   **delta-rs** is a Rust-based Delta Lake implementation with Python bindings (`deltalake` on PyPI) — no JVM or Spark required
+-   You'll learn how to write, read, time-travel, merge, optimize, and vacuum Delta tables using only Python
+-   We'll extract a small subset of the **Bakehouse** sample dataset via Spark, then work exclusively with delta-rs for all remaining operations
+
+## What is Delta-RS?
+
+[Delta-RS](https://github.com/delta-io/delta-rs) is a native Rust implementation of the Delta Lake protocol. The `deltalake` Python package provides bindings to this Rust core, giving you full Delta Lake capabilities without Apache Spark or a JVM.
+
+Key characteristics:
+
+-   **Rust core** — Fast, memory-safe, compiled to native code
+-   **Python bindings** — `pip install deltalake` and you're ready
+-   **No JVM dependency** — No Spark, no Java, no heavy runtime
+-   **Arrow-native** — Built on Apache Arrow for zero-copy interop with pandas, Polars, and other Arrow-based tools
+-   **Full Delta protocol** — Reads, writes, merges, time travel, optimize, vacuum
+
+## When Would You Use Delta-RS?
+
+Delta-RS is not a replacement for Spark — it's a complement. Here are the scenarios where it shines:
+
+-   **Local development & testing** — Read and write Delta tables on your laptop without spinning up a cluster
+-   **CI/CD pipelines** — Validate Delta table schemas and row counts in lightweight GitHub Actions jobs
+-   **Microservices & APIs** — Serve data from Delta tables without the overhead of a Spark runtime
+-   **Data validation scripts** — Quick schema checks, row counts, and data quality assertions before production
+-   **Edge & embedded** — Run Delta on resource-constrained environments where a JVM is impractical
+
+## Prerequisites
+
+```{python}
+%pip install deltalake pyarrow polars -q
+```
+
+```{python}
+import deltalake
+print(f"deltalake version: {deltalake.__version__}")
+```
+
+## The Bakehouse Dataset
+
+The Bakehouse dataset is a sample dataset available in Unity Catalog under `samples.bakehouse`. It models a bakery franchise business with sales, customers, suppliers, and reviews.
+
+::: {.callout-tip title="Finding the Dataset" appearance="simple"}
+In your Databricks workspace, navigate to the **Catalog Explorer** and look under `samples` > `bakehouse`. If you don't see it, your workspace administrator may need to enable sample datasets.
+:::
+
+Let's extract a small subset to work with. We'll take 1,000 rows from `sales_transactions` and write them to a temporary path as a Delta table using Spark — this is the **only** Spark operation in the entire tutorial.
+
+```{python}
+# Extract a small subset using Spark (the only Spark operation in this tutorial)
+DELTA_PATH = "/tmp/deltars_tutorial/sales"
+
+df = spark.table("samples.bakehouse.sales_transactions").limit(1000)
+df.write.format("delta").mode("overwrite").save(DELTA_PATH)
+
+print(f"Wrote {df.count()} rows to {DELTA_PATH}")
+df.printSchema()
+```
+
+From here on, **everything uses delta-rs** — no more Spark.
+
+## Example 1: Read a Delta Table
+
+```{python}
+from deltalake import DeltaTable
+
+dt = DeltaTable(DELTA_PATH)
+
+# Read as a pandas DataFrame
+pdf = dt.to_pandas()
+print(f"Rows: {len(pdf)}, Columns: {list(pdf.columns)}")
+pdf.head()
+```
+
+```{python}
+# Read as a PyArrow Table (zero-copy, more efficient for large data)
+arrow_table = dt.to_pyarrow_table()
+print(f"Schema: {arrow_table.schema}")
+print(f"Rows: {arrow_table.num_rows}")
+```
+
+```{python}
+# Read with Polars (fast DataFrame library)
+import polars as pl
+
+polars_df = pl.from_arrow(dt.to_pyarrow_table())
+polars_df.head()
+```
+
+## Example 2: Write a Delta Table
+
+```{python}
+import pandas as pd
+from deltalake import write_deltalake
+
+# Create sample data
+new_data = pd.DataFrame({
+    "product": ["Croissant", "Baguette", "Sourdough", "Brioche", "Rye Loaf"],
+    "quantity": [120, 85, 60, 45, 30],
+    "revenue": [360.00, 255.00, 240.00, 180.00, 90.00],
+})
+
+WRITE_PATH = "/tmp/deltars_tutorial/products"
+
+# Write as a new Delta table
+write_deltalake(WRITE_PATH, new_data, mode="overwrite")
+
+# Verify
+products_dt = DeltaTable(WRITE_PATH)
+print(products_dt.to_pandas())
+```
+
+## Example 3: Schema Inspection
+
+```{python}
+dt = DeltaTable(DELTA_PATH)
+
+# Inspect the schema
+print("Schema:")
+print(dt.schema())
+```
+
+```{python}
+# Table metadata
+print(f"\nVersion: {dt.version()}")
+print(f"\nMetadata: {dt.metadata()}")
+```
+
+```{python}
+# Full history (all versions)
+print("\nHistory:")
+for entry in dt.history():
+    print(f"  Version {entry['version']}: {entry['operation']} at {entry['timestamp']}")
+```
+
+## Example 4: Time Travel
+
+```{python}
+# Append new rows to create a new version
+additional_data = pd.DataFrame({
+    "product": ["Pain au Chocolat", "Focaccia"],
+    "quantity": [95, 40],
+    "revenue": [285.00, 160.00],
+})
+
+write_deltalake(WRITE_PATH, additional_data, mode="append")
+
+# Check current version
+current_dt = DeltaTable(WRITE_PATH)
+print(f"Current version: {current_dt.version()}")
+print(f"Current rows: {len(current_dt.to_pandas())}")
+```
+
+```{python}
+# Read a specific version (time travel)
+old_dt = DeltaTable(WRITE_PATH, version=0)
+print(f"\nVersion 0 rows: {len(old_dt.to_pandas())}")
+print(old_dt.to_pandas())
+```
+
+## Example 5: Merge / Upsert
+
+```{python}
+import pyarrow as pa
+
+# Source data with updates and new rows
+source_data = pa.table({
+    "product": ["Croissant", "Baguette", "Ciabatta"],
+    "quantity": [150, 90, 55],
+    "revenue": [450.00, 270.00, 165.00],
+})
+
+dt = DeltaTable(WRITE_PATH)
+
+# Merge: update existing products, insert new ones
+(
+    dt.merge(
+        source=source_data,
+        predicate="target.product = source.product",
+        source_alias="source",
+        target_alias="target",
+    )
+    .when_matched_update_all()
+    .when_not_matched_insert_all()
+    .execute()
+)
+
+print("After merge:")
+print(DeltaTable(WRITE_PATH).to_pandas())
+```
+
+## Example 6: Optimize & Vacuum
+
+```{python}
+dt = DeltaTable(WRITE_PATH)
+
+# Compact small files into larger ones
+optimize_result = dt.optimize.compact()
+print(f"Optimize result: {optimize_result}")
+```
+
+```{python}
+# Vacuum old files (remove files no longer referenced)
+# retention_hours=0 for demo only — use 168 (7 days) in production
+vacuum_result = dt.vacuum(retention_hours=0, enforce_retention_duration=False, dry_run=False)
+print(f"Vacuumed {len(vacuum_result)} files")
+```
+
+## Example 7: Predicate Pushdown
+
+```{python}
+dt = DeltaTable(DELTA_PATH)
+
+# Efficient filtered read — only reads relevant files
+filtered_df = dt.to_pandas(
+    filters=[("TransactionID", ">", "TXN-0500")]
+)
+
+print(f"Filtered rows: {len(filtered_df)} (from 1000 total)")
+filtered_df.head()
+```
+
+::: {.callout-tip title="Delta-RS vs Spark: When to Use Which?" appearance="simple"}
+**Use delta-rs when** you need lightweight, single-machine access to Delta tables — local dev, CI/CD, microservices, data validation, or anywhere a JVM is impractical.
+
+**Use Spark when** you need distributed compute across a cluster — large-scale ETL, complex SQL analytics, or workloads that don't fit in memory on a single machine.
+
+**They work together** — both read and write the same Delta format. Write with Spark on Databricks, read with delta-rs in your API. Or develop locally with delta-rs and deploy to Spark in production.
+:::
+
+## Cleanup & Cost Management
+
+```{python}
+# Clean up all temporary Delta tables created in this tutorial
+import shutil
+
+paths_to_clean = [
+    "/tmp/deltars_tutorial",
+]
+
+for path in paths_to_clean:
+    try:
+        shutil.rmtree(path)
+        print(f"Cleaned up: {path}")
+    except FileNotFoundError:
+        print(f"Already cleaned: {path}")
+```
+
+::: {.callout-important title="Stop Compute Resources" appearance="simple"}
+If you ran this tutorial on a Databricks cluster, make sure to **stop the cluster** when you're finished to avoid unnecessary costs. The delta-rs operations themselves use minimal compute — the cluster was only needed for the initial Spark data extraction.
+:::
+
+## References & Further Reading
+
+-   [delta-rs GitHub Repository](https://github.com/delta-io/delta-rs)
+-   [deltalake Python Documentation](https://delta-io.github.io/delta-rs/)
+-   [deltalake on PyPI](https://pypi.org/project/deltalake/)
+-   [Delta Lake Protocol Specification](https://github.com/delta-io/delta/blob/master/PROTOCOL.md)
+-   [Apache Arrow](https://arrow.apache.org/)
+-   [Polars Documentation](https://docs.pola.rs/)
