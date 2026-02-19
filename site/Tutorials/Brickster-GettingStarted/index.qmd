@@ -1,0 +1,595 @@
+---
+title: "Getting Started with Brickster: R for Databricks"
+subtitle: "Connect to Databricks from R using the brickster package"
+description: "Learn how to use the brickster R package to connect to Databricks, explore Unity Catalog, run SQL queries, and analyse data with dplyr."
+date-modified: "02/25/2026"
+date-format: "DD/MM/YYYY"
+categories: [brickster, R, Tutorials]
+toc: true
+toc-title: Navigation
+tags:
+  - databricks
+  - brickster
+  - R
+  - dplyr
+  - unity-catalog
+  - DBI
+draft: false
+execute:
+  enabled: true
+---
+
+::: {.callout-note title="Live Execution" appearance="simple"}
+All the code in this tutorial is rendered against a Databricks workspace before publication.
+:::
+
+::: {.callout-note title="connect.R — Project Helper" collapse="true"}
+This tutorial uses a shared helper at `_databricks/connect.R` that loads credentials from `.env` and auto-discovers your SQL Warehouse. Here's the full source:
+
+```r
+library(brickster)
+library(DBI)
+
+# Load .env file if it exists (mirrors Python's python-dotenv behaviour)
+# Walk up from working directory to find .env
+find_env_file <- function() {
+  dir <- getwd()
+  while (dir != dirname(dir)) {
+    candidate <- file.path(dir, ".env")
+    if (file.exists(candidate)) return(candidate)
+    dir <- dirname(dir)
+  }
+  NULL
+}
+
+env_file <- find_env_file()
+if (!is.null(env_file)) {
+  readRenviron(env_file)
+}
+
+#' Get a DBI connection to Databricks via brickster
+#'
+#' Reads DATABRICKS_HOST and DATABRICKS_TOKEN from environment variables.
+#' If DATABRICKS_WAREHOUSE_ID is set, uses it directly. Otherwise,
+#' auto-discovers the first available SQL warehouse.
+#'
+#' @param warehouse_id SQL Warehouse ID (optional — auto-discovers if not set)
+#' @return A DBI connection object
+get_databricks_connection <- function(warehouse_id = Sys.getenv("DATABRICKS_WAREHOUSE_ID")) {
+  if (nchar(warehouse_id) == 0) {
+    message("DATABRICKS_WAREHOUSE_ID not set, discovering warehouses...")
+    warehouses <- db_sql_warehouse_list()
+    if (length(warehouses) == 0) {
+      stop("No SQL Warehouses found. Create one in the Databricks UI.")
+    }
+    warehouse_id <- warehouses[[1]]$id
+    message("Using warehouse: ", warehouses[[1]]$name, " (", warehouse_id, ")")
+  }
+  dbConnect(
+    DatabricksSQL(),
+    warehouse_id = warehouse_id
+  )
+}
+```
+:::
+
+## Summary
+
+-   **Brickster** is an R package from Databricks Labs that provides native R integration with Databricks — no ODBC driver required
+-   You'll install brickster, connect to a Databricks workspace, and explore Unity Catalog (catalogs, schemas, tables)
+-   We'll install dplyr on a Databricks cluster, run SQL queries, and use dplyr verbs to analyse the **Bakehouse** sample dataset
+-   Finally, we'll show how you could write results back to a new Delta table
+
+## What is Brickster?
+
+[Brickster](https://databrickslabs.github.io/brickster/) is a Databricks Labs R package that gives R users first-class access to Databricks workspaces. Where Python users have `databricks-connect`, R users have brickster.
+
+Key features:
+
+-   **DBI backend** — Standard R database connectivity via `dbConnect(DatabricksSQL(), ...)`
+-   **dbplyr integration** — Write dplyr code that translates to Databricks SQL automatically
+-   **Unity Catalog API** — Browse and manage catalogs, schemas, tables, and volumes programmatically
+-   **Cluster management** — Start, stop, and install libraries on clusters from R
+-   **No ODBC required** — Connects directly via the Databricks SQL Statement Execution API
+-   **RStudio integration** — Browse workspace resources via the Connections Pane with `open_workspace()`
+
+## Prerequisites
+
+Before you begin, make sure you have:
+
+-   **R >= 4.1.0** installed
+-   A **Databricks workspace** with a SQL Warehouse available
+-   A **Personal Access Token** (or OAuth configured) for authentication
+-   Access to the **Bakehouse sample dataset** in Unity Catalog (available by default in most workspaces)
+
+Install brickster from CRAN:
+
+```{r}
+#| eval: false
+install.packages("brickster")
+```
+
+Load the libraries we'll use throughout:
+
+```{r}
+library(brickster)
+library(DBI)
+library(dplyr)
+```
+
+## Step 1: Setup Connection
+
+Brickster reads authentication credentials from environment variables. Store them in a `.env` file in your project root (or in `.Renviron` for global access) so they're never hard-coded in your scripts.
+
+Create a `.env` file in your project root:
+
+```
+DATABRICKS_HOST=https://<your-workspace>.cloud.databricks.com
+DATABRICKS_TOKEN=<your-personal-access-token>
+```
+
+::: {.callout-tip title="Optional: SQL Warehouse ID" appearance="simple"}
+If you know your SQL Warehouse ID, add `DATABRICKS_WAREHOUSE_ID=<id>` to your `.env` file. If not, brickster can auto-discover the first available warehouse in your workspace.
+:::
+
+Our project helper at `_databricks/connect.R` loads the `.env` file automatically and handles warehouse discovery:
+
+```{r}
+source("../../_databricks/connect.R")
+con <- get_databricks_connection()
+```
+
+Verify the connection works:
+
+```{r}
+dbGetQuery(con, "SELECT current_catalog(), current_schema()")
+```
+
+## Step 2: List Catalogs
+
+Unity Catalog organises data in a three-level namespace: **catalog** > **schema** > **table**. Let's start by listing the catalogs available in your workspace:
+
+```{r}
+#| output: false
+catalogs <- db_uc_catalogs_list()
+```
+
+This returns a list of all catalogs you have access to. You should see at least `main` (the default) and `samples` (Databricks sample data).
+
+::: {.callout-note title="Output: db_uc_catalogs_list()" collapse="true"}
+```{r}
+#| echo: false
+catalogs
+```
+:::
+
+## Step 3: Get a Catalog
+
+Drill into a specific catalog to see its metadata:
+
+```{r}
+#| output: false
+samples_catalog <- db_uc_catalogs_get(catalog = "samples")
+```
+
+This returns details like the catalog owner, creation time, and any comments attached to it.
+
+::: {.callout-note title="Output: db_uc_catalogs_get()" collapse="true"}
+```{r}
+#| echo: false
+samples_catalog
+```
+:::
+
+## Step 4: List Tables in a Schema
+
+Now let's navigate into the Bakehouse schema and see what tables are available. First, list the schemas in the `samples` catalog:
+
+```{r}
+#| output: false
+schemas <- db_uc_schemas_list(catalog = "samples")
+```
+
+::: {.callout-note title="Output: db_uc_schemas_list()" collapse="true"}
+```{r}
+#| echo: false
+schemas
+```
+:::
+
+Then list the tables in the `bakehouse` schema:
+
+```{r}
+#| output: false
+tables <- db_uc_tables_list(catalog = "samples", schema = "bakehouse")
+```
+
+You should see tables like `sales_transactions`, `sales_customers`, `sales_franchises`, and `sales_suppliers`.
+
+::: {.callout-note title="Output: db_uc_tables_list()" collapse="true"}
+```{r}
+#| echo: false
+tables
+```
+:::
+
+::: {.callout-tip title="Quick Table Check" appearance="simple"}
+You can also check if a specific table exists:
+
+```r
+db_uc_tables_exists(catalog = "samples", schema = "bakehouse", table = "sales_transactions")
+```
+:::
+
+## Step 5: Install dplyr on the Cluster
+
+If you're working with a Databricks cluster (rather than just a SQL Warehouse), you can install R packages directly onto it. Let's install the latest version of dplyr:
+
+```{r}
+#| eval: false
+cluster_id <- Sys.getenv("DATABRICKS_CLUSTER_ID")
+
+db_libs_install(
+  cluster_id = cluster_id,
+  libraries = list(
+    list(cran = list(package = "dplyr"))
+  )
+)
+
+# Wait for the installation to complete
+wait_for_lib_installs(cluster_id = cluster_id)
+```
+
+Check the installation status:
+
+```{r}
+#| eval: false
+db_libs_cluster_status(cluster_id = cluster_id)
+```
+
+::: {.callout-note title="SQL Warehouse vs Cluster" appearance="simple"}
+SQL Warehouses don't support library installation — they come pre-configured. The `db_libs_install()` function is for **all-purpose clusters** where you need custom R packages. For this tutorial, all remaining examples use the SQL Warehouse connection via DBI, which doesn't require cluster library installation.
+:::
+
+## Step 6: Run a SQL Query
+
+The most direct way to query data is with `dbGetQuery()`. Let's pull the first 10 sales transactions from the Bakehouse dataset:
+
+```{r}
+#| output: false
+sales <- dbGetQuery(
+  con,
+  "SELECT * FROM samples.bakehouse.sales_transactions LIMIT 10"
+)
+```
+
+::: {.callout-note title="Output: SELECT * ... LIMIT 10" collapse="true"}
+```{r}
+#| echo: false
+sales
+```
+:::
+
+You can run any Databricks SQL, including aggregations:
+
+```{r}
+#| output: false
+daily_revenue <- dbGetQuery(con, "
+  SELECT
+    DATE(dateTime) AS sale_date,
+    COUNT(*) AS num_transactions,
+    ROUND(SUM(totalPrice), 2) AS total_revenue,
+    ROUND(AVG(totalPrice), 2) AS avg_transaction
+  FROM samples.bakehouse.sales_transactions
+  GROUP BY DATE(dateTime)
+  ORDER BY sale_date DESC
+  LIMIT 20
+")
+```
+
+::: {.callout-note title="Output: Daily Revenue Aggregation" collapse="true"}
+```{r}
+#| echo: false
+daily_revenue
+```
+:::
+
+## Step 7: Get a Table with dplyr
+
+Brickster's dbplyr integration lets you write dplyr code that gets translated to SQL and executed on Databricks. The data stays on the server until you call `collect()`.
+
+Create a lazy reference to the sales table:
+
+```{r}
+#| output: false
+sales_tbl <- tbl(con, I("samples.bakehouse.sales_transactions"))
+```
+
+::: {.callout-note title="Output: tbl() Preview" collapse="true"}
+```{r}
+#| echo: false
+sales_tbl
+```
+:::
+
+::: {.callout-tip title="The I() Wrapper" appearance="simple"}
+Use `I()` around fully-qualified table names (`catalog.schema.table`) to tell dbplyr to treat the string as a literal identifier rather than trying to parse it.
+:::
+
+Now use dplyr verbs — these translate to SQL behind the scenes:
+
+```{r}
+#| output: false
+top_products <- sales_tbl |>
+  group_by(product) |>
+  summarise(
+    total_sold = n(),
+    total_revenue = sum(totalPrice, na.rm = TRUE),
+    avg_price = mean(unitPrice, na.rm = TRUE)
+  ) |>
+  arrange(desc(total_revenue)) |>
+  head(10) |>
+  collect()
+```
+
+::: {.callout-note title="Output: Top Products" collapse="true"}
+```{r}
+#| echo: false
+top_products
+```
+:::
+
+You can inspect the generated SQL with `show_query()`:
+
+```{r}
+#| output: false
+sales_tbl |>
+  group_by(product) |>
+  summarise(total_sold = n()) |>
+  arrange(desc(total_sold)) |>
+  head(5) |>
+  show_query()
+```
+
+## Step 8: Basic Analysis
+
+Let's do some analysis on the Bakehouse data by combining dplyr operations and bringing the results into R.
+
+### Revenue by Franchise
+
+```{r}
+#| output: false
+franchise_revenue <- sales_tbl |>
+  group_by(franchiseID) |>
+  summarise(
+    total_revenue = sum(totalPrice, na.rm = TRUE),
+    num_transactions = n(),
+    avg_transaction = mean(totalPrice, na.rm = TRUE)
+  ) |>
+  arrange(desc(total_revenue)) |>
+  collect()
+```
+
+::: {.callout-note title="Output: Revenue by Franchise" collapse="true"}
+```{r}
+#| echo: false
+franchise_revenue
+```
+:::
+
+### Transaction Distribution
+
+```{r}
+#| output: false
+transaction_stats <- sales_tbl |>
+  summarise(
+    total_transactions = n(),
+    min_amount = min(totalPrice, na.rm = TRUE),
+    max_amount = max(totalPrice, na.rm = TRUE),
+    avg_amount = mean(totalPrice, na.rm = TRUE)
+  ) |>
+  collect()
+```
+
+::: {.callout-note title="Output: Transaction Stats" collapse="true"}
+```{r}
+#| echo: false
+transaction_stats
+```
+:::
+
+### Monthly Trends
+
+```{r}
+#| output: false
+monthly_trends <- sales_tbl |>
+  mutate(
+    sale_month = date_trunc("month", dateTime)
+  ) |>
+  group_by(sale_month) |>
+  summarise(
+    revenue = sum(totalPrice, na.rm = TRUE),
+    transactions = n()
+  ) |>
+  arrange(sale_month) |>
+  collect()
+```
+
+::: {.callout-note title="Output: Monthly Trends" collapse="true"}
+```{r}
+#| echo: false
+monthly_trends
+```
+:::
+
+### Transaction Heatmap by Day of Week and Hour
+
+Once data is collected into R, you can use any R visualisation library. Here we use a custom `theme_dailydatabricks()` ggplot theme with the logo watermark.
+
+::: {.callout-note title="theme_dailydatabricks() — Custom ggplot Theme" collapse="true"}
+```{r}
+#| label: theme-setup
+library(ggplot2)
+library(png)
+library(grid)
+
+# Load the logo for watermark
+logo_img <- readPNG("Assets/logo-icon.png")
+logo_grob <- rasterGrob(
+  logo_img,
+  x = unit(1, "npc") - unit(0.4, "cm"),
+  y = unit(0.4, "cm"),
+  hjust = 1, vjust = 0,
+  width = unit(1.2, "cm"),
+  interpolate = TRUE
+)
+
+# Custom DailyDatabricks theme
+theme_dailydatabricks <- function(base_size = 12) {
+  theme_minimal(base_size = base_size) %+replace%
+    theme(
+      plot.title = element_text(
+        face = "bold", size = rel(1.3), hjust = 0,
+        margin = margin(b = 8)
+      ),
+      plot.subtitle = element_text(
+        size = rel(0.9), colour = "#666666", hjust = 0,
+        margin = margin(b = 12)
+      ),
+      plot.caption = element_text(
+        size = rel(0.7), colour = "#999999", hjust = 1
+      ),
+      axis.title = element_text(size = rel(0.85), colour = "#333333"),
+      axis.text = element_text(size = rel(0.8), colour = "#555555"),
+      panel.grid.major = element_line(colour = "#F0F0F0", linewidth = 0.4),
+      panel.grid.minor = element_blank(),
+      legend.position = "bottom",
+      legend.title = element_text(size = rel(0.85)),
+      legend.text = element_text(size = rel(0.75)),
+      plot.margin = margin(15, 15, 15, 15)
+    )
+}
+```
+:::
+
+Let's build a heatmap of transaction volume across day of week and hour of day — a useful way to spot when the bakery is busiest:
+
+```{r}
+#| label: heatmap
+#| fig-width: 10
+#| fig-height: 5
+# Pull transaction counts by day of week and hour, computed on Databricks
+heatmap_data <- sales_tbl |>
+  mutate(
+    dow = dayofweek(dateTime),
+    hour = hour(dateTime)
+  ) |>
+  group_by(dow, hour) |>
+  summarise(transactions = n(), .groups = "drop") |>
+  collect() |>
+  mutate(
+    day_name = factor(
+      dow,
+      levels = 1:7,
+      labels = c("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
+    ),
+    hour_label = sprintf("%02d:00", hour)
+  )
+
+# Build the heatmap
+p <- ggplot(heatmap_data, aes(x = hour, y = day_name, fill = transactions)) +
+  geom_tile(colour = "white", linewidth = 0.6) +
+  scale_fill_gradient(
+    low = "#FDEAEA",
+    high = "#CC3333",
+    name = "Transactions"
+  ) +
+  scale_x_continuous(
+    breaks = seq(0, 23, 3),
+    labels = sprintf("%02d:00", seq(0, 23, 3)),
+    expand = c(0, 0)
+  ) +
+  scale_y_discrete(expand = c(0, 0)) +
+  labs(
+    title = "Bakehouse Transaction Volume",
+    subtitle = "By day of week and hour of day",
+    x = NULL,
+    y = NULL,
+    caption = "dailydatabricks.tips"
+  ) +
+  theme_dailydatabricks() +
+  annotation_custom(logo_grob)
+
+p
+```
+
+## Step 9: Write Back to a New Table (Example Only)
+
+::: {.callout-warning title="Not Executed" appearance="simple"}
+The code below demonstrates how to write data back to Databricks. It is **shown but not executed** to avoid creating tables in your workspace. Adjust the catalog, schema, and table names to match your environment before running.
+:::
+
+For small datasets (under 50,000 rows), brickster uses inline SQL `INSERT` statements:
+
+```{r}
+#| eval: false
+# Write the franchise revenue summary to a new table
+dbWriteTable(
+  con,
+  name = "main.default.bakehouse_franchise_summary",
+  value = franchise_revenue
+)
+```
+
+For larger datasets, brickster stages the data as Parquet in a Unity Catalog volume before loading it. You need to specify a staging volume:
+
+```{r}
+#| eval: false
+# For datasets > 50,000 rows, provide a staging volume
+dbWriteTable(
+  con,
+  name = "main.default.bakehouse_large_analysis",
+  value = large_result,
+  staging_volume = "/Volumes/main/default/staging"
+)
+```
+
+You can also use SQL to create tables from query results:
+
+```{r}
+#| eval: false
+dbExecute(con, "
+  CREATE TABLE main.default.bakehouse_monthly_trends AS
+  SELECT
+    DATE_TRUNC('month', dateTime) AS sale_month,
+    SUM(totalPrice) AS revenue,
+    COUNT(*) AS transactions
+  FROM samples.bakehouse.sales_transactions
+  GROUP BY DATE_TRUNC('month', dateTime)
+")
+```
+
+::: {.callout-tip title="Overwrite vs Append" appearance="simple"}
+By default, `dbWriteTable()` will fail if the table already exists. Use `overwrite = TRUE` to replace the table, or `append = TRUE` to add rows to an existing table.
+:::
+
+## Cleanup & Cost Management
+
+Disconnect from the warehouse when you're done:
+
+```{r}
+dbDisconnect(con)
+```
+
+::: {.callout-important title="Stop Compute Resources" appearance="simple"}
+Make sure to **stop your SQL Warehouse** in the Databricks UI when you're finished to avoid unnecessary costs. If you started a cluster for library installation, stop that too.
+:::
+
+## References & Further Reading
+
+-   [Brickster Documentation](https://databrickslabs.github.io/brickster/)
+-   [Brickster on CRAN](https://cran.r-project.org/package=brickster)
+-   [Brickster GitHub Repository](https://github.com/databrickslabs/brickster)
+-   [Databricks SQL Statement Execution API](https://docs.databricks.com/api/workspace/statementexecution)
+-   [dbplyr Documentation](https://dbplyr.tidyverse.org/)
+-   [Unity Catalog Overview](https://docs.databricks.com/en/data-governance/unity-catalog/index.html)
