@@ -1,0 +1,257 @@
+---
+title: "Rename Multiple Columns in PySpark with withColumnsRenamed()"
+description: "Renaming columns one at a time with .withColumnRenamed() in a loop stacks nested plan nodes and slows Spark's optimizer. Use .withColumnsRenamed() to apply all renames in a single pass with one clean plan node."
+date-modified: "02/19/2026"
+date-format: "DD/MM/YYYY"
+categories: [pyspark, performance, Spark]
+toc: true
+toc-title: Navigation
+tags:
+  - databricks
+  - pyspark
+  - spark
+  - performance
+  - withColumnsRenamed
+  - dataframes
+draft: false
+execute:
+  enabled: true
+---
+
+```{python}
+#| include: false
+#| label: setup
+import sys, os
+sys.path.insert(0, os.path.abspath("../.."))
+from _databricks import get_spark_session
+spark = get_spark_session()
+```
+
+::: {.callout-note title="Live Execution" appearance="simple"}
+All code in this post is rendered against a Databricks workspace before publication.
+:::
+
+# Summary
+
+-   Calling `.withColumnRenamed()` in a loop has the same problem as `.withColumn()` loops: each call adds a new `Project` node to the logical plan
+-   `.withColumnsRenamed()` (Spark 3.4+ / DBR 13.0+) takes a dictionary of `{old_name: new_name}` and applies all renames in a single plan step
+-   Perfect for converting to snake_case, expanding abbreviations, removing special characters, and applying generic naming conventions across entire DataFrames
+
+# Introduction
+
+This is the companion anti-pattern to [calling `.withColumn()` in a loop](withColumns.qmd). If you've ever ingested data from vendor feeds, legacy systems, APIs, or CSVs, you know the pain. Column names come in every flavour: `CustID`, `trnxAmt`, `ACCT-bal`, `pmt$Status`, `addr.Line1`. The instinct is to write a loop renaming them one by one.
+
+The problem is identical to `.withColumn()` loops. Each `.withColumnRenamed()` call returns a new DataFrame with a new `Project` node stacked on the logical plan. With dozens of renames, the Catalyst optimizer bogs down traversing and optimizing through all those nested nodes.
+
+`.withColumnsRenamed()` was introduced in PySpark 3.4 to solve this. One dictionary mapping old names to new names, one plan node.
+
+```
+df.withColumnsRenamed(colsMap: dict[str, str]) -> DataFrame
+```
+
+::: {.callout-note title="Setup: Create Sample Data" collapse="true"}
+
+Every example below runs against this `df`, a realistic messy dataset with intentionally inconsistent column names.
+
+The column names cover the usual mess: `CustID` (PascalCase), `custName` (camelCase), `trnx_date` (abbreviated snake_case), `trnxAmt` (camelCase + abbreviation), `ACCT-bal` (UPPER + hyphen), `pmt$Status` (dollar sign), `addr.Line1` (dot + PascalCase). This is what real source data looks like.
+
+```{python}
+from faker import Faker
+from pyspark.sql.types import *
+import random
+
+fake = Faker()
+Faker.seed(42)
+random.seed(42)
+
+# Generate 1000 rows with intentionally messy column names
+rows = []
+for _ in range(1000):
+    rows.append((
+        fake.random_int(min=10000, max=99999),
+        fake.name(),
+        fake.date_between("-2y", "today").isoformat(),
+        round(random.uniform(5.0, 9999.99), 4),
+        round(random.uniform(-500.0, 50000.0), 2),
+        random.choice(["pending", "complete", "failed", "REVERSED"]),
+        fake.street_address(),
+    ))
+
+schema = StructType([
+    StructField("CustID",     IntegerType()),
+    StructField("custName",   StringType()),
+    StructField("trnx_date",  StringType()),
+    StructField("trnxAmt",    DoubleType()),
+    StructField("ACCT-bal",   DoubleType()),
+    StructField("pmt$Status", StringType()),
+    StructField("addr.Line1", StringType()),
+])
+
+df = spark.createDataFrame(rows, schema)
+print(df.columns)
+df.show(5, truncate=False)
+```
+:::
+
+# Code Examples
+
+### The Anti-Pattern
+
+```{python}
+# Each iteration creates a new DataFrame with a deeper logical plan
+rename_map = {
+    "CustID":     "customer_id",
+    "trnxAmt":    "transaction_amount",
+    "ACCT-bal":   "account_balance",
+    "pmt$Status": "payment_status",
+    "addr.Line1": "address_line_1",
+}
+
+df_result = df
+for old_name, new_name in rename_map.items():
+    df_result = df_result.withColumnRenamed(old_name, new_name)
+# 5 iterations = 5 nested Project nodes
+
+print(df_result.columns)
+```
+
+### The Fix: `.withColumnsRenamed()`
+
+```{python}
+# Single plan node, single pass, same result
+df_result = df.withColumnsRenamed({
+    "CustID":     "customer_id",
+    "trnxAmt":    "transaction_amount",
+    "ACCT-bal":   "account_balance",
+    "pmt$Status": "payment_status",
+    "addr.Line1": "address_line_1",
+})
+
+print(df_result.columns)
+```
+
+### Real-World: Generic snake_case Conversion for All Columns
+
+When you want every column in your DataFrame to follow a consistent naming convention, build the rename dictionary dynamically:
+
+```{python}
+import re
+
+def to_snake_case(name: str) -> str:
+    """Convert any naming convention to clean snake_case."""
+    name = re.sub(r'[.$\-@#!&*()+=/\\]', '_', name)      # special chars to _
+    name = re.sub(r'([a-z0-9])([A-Z])', r'\1_\2', name)   # camelCase split
+    name = re.sub(r'([A-Z]+)([A-Z][a-z])', r'\1_\2', name) # ACRONYMWord split
+    name = re.sub(r'_{2,}', '_', name)                      # collapse doubles
+    return name.lower().strip('_')
+
+# Build rename dict from current column names
+rename_map = {col: to_snake_case(col) for col in df.columns}
+print(rename_map)
+
+# Apply all renames in one pass
+df_clean = df.withColumnsRenamed(rename_map)
+print(df_clean.columns)
+```
+
+### Real-World: Expand Common Abbreviations
+
+Data teams often inherit column names full of cryptic abbreviations from source systems. Combine snake_case conversion with abbreviation expansion for truly readable schemas:
+
+```{python}
+import re
+
+ABBREVIATIONS = {
+    "trnx": "transaction", "cust": "customer",
+    "acct": "account",     "pmt":  "payment",
+    "addr": "address",     "amt":  "amount",
+    "bal":  "balance",     "qty":  "quantity",
+    "desc": "description", "dt":   "date",
+    "ts":   "timestamp",   "nbr":  "number",
+    "num":  "number",      "cd":   "code",
+    "nm":   "name",
+}
+
+def expand_column_name(name: str) -> str:
+    """snake_case + expand common abbreviations."""
+    # First convert to snake_case
+    snake = re.sub(r'[.$\-@#!]', '_', name)
+    snake = re.sub(r'([a-z0-9])([A-Z])', r'\1_\2', snake)
+    snake = re.sub(r'_{2,}', '_', snake).lower().strip('_')
+    # Then expand abbreviations
+    parts = snake.split("_")
+    return "_".join(ABBREVIATIONS.get(p, p) for p in parts)
+
+rename_map = {col: expand_column_name(col) for col in df.columns}
+print(rename_map)
+
+df_clean = df.withColumnsRenamed(rename_map)
+print(df_clean.columns)
+```
+
+### Real-World: Strip Vendor Prefixes
+
+Vendor data often arrives with prefixes like `SRC_`, `RAW_`, or `STG_`. Here we create a prefixed version and strip it back:
+
+```{python}
+# First simulate vendor-prefixed data from our setup df
+df_vendor = df.withColumnsRenamed({col: f"SRC_{col}" for col in df.columns})
+print("Before:", df_vendor.columns)
+
+# Now strip the prefix in one pass
+prefix = "SRC_"
+rename_map = {
+    col: col[len(prefix):] if col.startswith(prefix) else col
+    for col in df_vendor.columns
+}
+df_clean = df_vendor.withColumnsRenamed(rename_map)
+print("After: ", df_clean.columns)
+```
+
+### Scala Equivalent
+
+``` scala
+import org.apache.spark.sql.functions._
+
+// Scala uses a Map of old name to new name
+val dfResult = df.withColumnsRenamed(Map(
+  "CustID"     -> "customer_id",
+  "trnxAmt"    -> "transaction_amount",
+  "ACCT-bal"   -> "account_balance",
+  "pmt$Status" -> "payment_status",
+  "addr.Line1" -> "address_line_1"
+))
+```
+
+::: {.callout-tip title="Check Your Spark Version" appearance="simple"}
+`.withColumnsRenamed()` requires PySpark 3.4+ (Databricks Runtime 13.0+). On older runtimes, you can use `df.toDF(*new_names)` if renaming all columns at once, or `functools.reduce` with `.withColumnRenamed()` as a workaround.
+:::
+
+# Detail
+
+## The Same Problem, Different Method
+
+`.withColumnRenamed()` suffers from exactly the same plan-nesting issue as `.withColumn()`. Each call returns a new DataFrame with a new `Project` node appended to the logical plan. See [the companion tip on .withColumns()](withColumns.qmd) for the full Catalyst optimizer breakdown.
+
+The key difference is that `.withColumnsRenamed()` works with strings only, no `Column` expressions needed, making it even simpler to use.
+
+## Benefits of `.withColumnsRenamed()`
+
+1.  **Single Plan Node**: All renames collapse into one `Project`, no nested plan growth
+2.  **Dictionary-Driven**: Define rename rules as configuration rather than hardcoded loops
+3.  **Composable**: Build the rename dict programmatically from regex rules, lookup tables, or metadata
+4.  **Safe Handling**: If a column in the dict does not exist in the DataFrame, Spark silently skips it (no error)
+5.  **Production Ready**: Define your naming standards once, apply them everywhere
+
+## Common Rename Patterns
+
+-   **snake_case conversion**: Teams following Python naming conventions
+-   **Abbreviation expansion**: Improved readability and self-documenting schemas
+-   **Prefix/suffix stripping**: Vendor data normalisation
+-   **Special character removal**: Compatibility with downstream systems (Parquet, Delta, BI tools that choke on dots, dollar signs, or hyphens in column names)
+
+# References & Further Reading
+
+-   [PySpark DataFrame.withColumnsRenamed API Documentation](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.DataFrame.withColumnsRenamed.html)
+-   [SPARK-39508: Add DataFrame.withColumnsRenamed to PySpark](https://issues.apache.org/jira/browse/SPARK-39508)
+-   [Companion Tip: From 20 withColumn() Calls to 1 withColumns()](withColumns.qmd)
