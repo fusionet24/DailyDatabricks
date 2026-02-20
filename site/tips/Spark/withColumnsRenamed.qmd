@@ -224,7 +224,7 @@ val dfResult = df.withColumnsRenamed(Map(
 ```
 
 ::: {.callout-tip title="Check Your Spark Version" appearance="simple"}
-`.withColumnsRenamed()` requires PySpark 3.4+ (Databricks Runtime 13.0+). On older runtimes, you can use `df.toDF(*new_names)` if renaming all columns at once, or `functools.reduce` with `.withColumnRenamed()` as a workaround.
+`.withColumnsRenamed()` requires PySpark 3.4+ (Databricks Runtime 13.0+).
 :::
 
 # Detail
@@ -234,14 +234,6 @@ val dfResult = df.withColumnsRenamed(Map(
 `.withColumnRenamed()` suffers from exactly the same plan-nesting issue as `.withColumn()`. Each call returns a new DataFrame with a new `Project` node appended to the logical plan. See [the companion tip on .withColumns()](withColumns.qmd) for the full Catalyst optimizer breakdown.
 
 The key difference is that `.withColumnsRenamed()` works with strings only, no `Column` expressions needed, making it even simpler to use.
-
-## Benefits of `.withColumnsRenamed()`
-
-1.  **Single Plan Node**: All renames collapse into one `Project`, no nested plan growth
-2.  **Dictionary-Driven**: Define rename rules as configuration rather than hardcoded loops
-3.  **Composable**: Build the rename dict programmatically from regex rules, lookup tables, or metadata
-4.  **Safe Handling**: If a column in the dict does not exist in the DataFrame, Spark silently skips it (no error)
-5.  **Production Ready**: Define your naming standards once, apply them everywhere
 
 ## Common Rename Patterns
 
@@ -253,5 +245,4 @@ The key difference is that `.withColumnsRenamed()` works with strings only, no `
 # References & Further Reading
 
 -   [PySpark DataFrame.withColumnsRenamed API Documentation](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.DataFrame.withColumnsRenamed.html)
--   [SPARK-39508: Add DataFrame.withColumnsRenamed to PySpark](https://issues.apache.org/jira/browse/SPARK-39508)
 -   [Companion Tip: From 20 withColumn() Calls to 1 withColumns()](withColumns.qmd)
