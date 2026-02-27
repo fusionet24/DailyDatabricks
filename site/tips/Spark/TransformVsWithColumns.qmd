@@ -1,0 +1,248 @@
+---
+title: ".transform() vs .withColumns(): Right Tool, Right Grain"
+description: "Using .transform() for column-level work hides intent and increases code volume. .withColumns() is explicit, compact, and generates a single plan node. Use .transform() for pipeline-level chaining instead."
+date-modified: "02/27/2026"
+date-format: "DD/MM/YYYY"
+categories: [pyspark, Spark, best-practices]
+toc: true
+toc-title: Navigation
+tags:
+  - databricks
+  - pyspark
+  - spark
+  - transform
+  - withColumns
+  - dataframes
+  - best-practices
+draft: false
+execute:
+  enabled: true
+---
+
+```{python}
+#| include: false
+#| label: setup
+import sys, os
+sys.path.insert(0, os.path.abspath("../.."))
+from _databricks import get_spark_session
+spark = get_spark_session()
+```
+
+::: {.callout-note title="Live Execution" appearance="simple"}
+All code in this post is rendered against a Databricks workspace before publication.
+:::
+
+::: {.callout-note title="Context" appearance="simple"}
+Inspired by [Denys K.'s LinkedIn post](https://www.linkedin.com/posts/denys-kulemza_stop-writing-500-line-pyspark-scripts-we-share-7431723120543182848-k9Ws?utm_source=share&utm_medium=member_desktop&rcm=ACoAAA-Omc0BReiFFqoOChIIcZpbs7HxWFIfdcU) on using `.transform()` to break up long `.withColumn()` chains. The intent is spot on — nobody wants 500-line mega-chains. But there's a better tool for column-level work.
+:::
+
+## Summary
+
+-   Wrapping individual `.withColumn()` calls in functions and chaining with `.transform()` hides column-level intent — you have to read every function definition to know what columns are being added
+-   `.withColumns()` (Spark 3.3+ / DBR 12.0+) keeps every column name and expression visible at the call site, in a single plan node
+-   `.transform()` shines at **pipeline-level** chaining: deduplication, SCD logic, audit metadata — not individual column expressions
+-   Both approaches are testable.
+
+::: {.callout-note title="Setup: Create Sample Data" collapse="true"}
+Faker-generated data matching the original post's scenario: `first`, `last`, `age`, `email`, `status`.
+
+```{python}
+from faker import Faker
+from pyspark.sql import functions as F
+from pyspark.sql.types import *
+import random
+
+fake = Faker()
+Faker.seed(42)
+random.seed(42)
+
+rows = []
+for _ in range(500):
+    rows.append((
+        fake.first_name(),
+        fake.last_name(),
+        random.randint(18, 75),
+        f"  {fake.email()}  ",  # whitespace to clean
+        random.choice(["active", "inactive", "pending", "suspended"]),
+    ))
+
+schema = StructType([
+    StructField("first",  StringType()),
+    StructField("last",   StringType()),
+    StructField("age",    IntegerType()),
+    StructField("email",  StringType()),
+    StructField("status", StringType()),
+])
+
+df = spark.createDataFrame(rows, schema)
+df.show(5, truncate=False)
+```
+:::
+
+## Approach 1: `.transform()` with Per-Column Functions
+
+This is the pattern from the original post — each column gets its own function:
+
+```{python}
+from pyspark.sql import functions as F
+
+def add_full_name(df):
+    return df.withColumn(
+        "full_name", F.concat_ws(" ", F.col("first"), F.col("last"))
+    )
+
+def categorize_age(df):
+    return df.withColumn(
+        "age_group",
+        F.when(F.col("age") < 30, "young")
+         .when(F.col("age") < 50, "mid")
+         .otherwise("senior"),
+    )
+
+def normalize_email(df):
+    return df.withColumn("email_clean", F.lower(F.trim(F.col("email"))))
+
+def clean_status(df):
+    return df.withColumn(
+        "status_clean",
+        F.when(F.col("status") == "active", "ACTIVE").otherwise("INACTIVE"),
+    )
+
+df_transform = (
+    df
+    .transform(add_full_name)
+    .transform(categorize_age)
+    .transform(normalize_email)
+    .transform(clean_status)
+)
+
+df_transform.show(5, truncate=False)
+```
+
+::: {.callout-warning title="The problem" appearance="simple"}
+To understand what columns this adds, you need to read **4 separate function definitions**. The column names and expressions are scattered. Each `.transform()` wrapping a `.withColumn()` still creates a separate `Project` node — 4 nodes total, same as a loop. And the total line count went **up**, not down.
+:::
+
+## Approach 2: `.withColumns()` — Explicit and Compact
+
+```{python}
+from pyspark.sql import functions as F
+
+df_with_columns = df.withColumns({
+    "full_name":    F.concat_ws(" ", F.col("first"), F.col("last")),
+    "age_group":    F.when(F.col("age") < 30, "young")
+                     .when(F.col("age") < 50, "mid")
+                     .otherwise("senior"),
+    "email_clean":  F.lower(F.trim(F.col("email"))),
+})
+
+df_with_columns.show(5, truncate=False)
+```
+
+::: {.callout-tip title="Why this wins" appearance="simple"}
+One call. Every column name and its expression visible at the call site. No function definitions to chase. Fewer lines. More readable.
+:::
+
+## When `.transform()` IS the Right Tool
+
+`.transform()` is excellent at the **pipeline** grain — composing meaningful DataFrame stages:
+
+```{python}
+from pyspark.sql import functions as F
+from pyspark.sql.window import Window
+
+def select_latest_per_email(df):
+    """Keep the most recent record per email."""
+    w = Window.partitionBy("email").orderBy(F.col("age").desc())
+    return (df
+        .withColumn("_rn", F.row_number().over(w))
+        .filter("_rn = 1")
+        .drop("_rn"))
+
+def enrich_columns(df):
+    """Add derived columns in one pass."""
+    return df.withColumns({
+        "full_name":    F.concat_ws(" ", F.col("first"), F.col("last")),
+        "age_group":    F.when(F.col("age") < 30, "young")
+                         .when(F.col("age") < 50, "mid")
+                         .otherwise("senior"),
+        "email_clean":  F.lower(F.trim(F.col("email"))),
+        "status_clean": F.when(F.col("status") == "active", "ACTIVE")
+                         .otherwise("INACTIVE"),
+    })
+
+def add_audit_metadata(df):
+    """Standard audit columns."""
+    return df.withColumns({
+        "ingested_at": F.current_timestamp(),
+        "source":      F.lit("CRM"),
+    })
+
+# Pipeline-level chaining — THIS is the right grain for .transform()
+df_final = (
+    df
+    .transform(select_latest_per_email)
+    .transform(enrich_columns)
+    .transform(add_audit_metadata)
+)
+
+df_final.show(5, truncate=False)
+```
+
+::: {.callout-tip title="Best of both" appearance="simple"}
+Each `.transform()` function is a meaningful pipeline stage — deduplication, enrichment, auditing. Inside each stage, `.withColumns()` handles the column work. This is composable, readable, and generates an efficient plan.
+:::
+
+## What About Testing?
+
+A fair point for `.transform()`: you can test each function in isolation with a tiny DataFrame. But `.withColumns()` is equally testable:
+
+```{python}
+from pyspark.sql import functions as F
+
+# Define expressions as reusable variables
+_age_group = (
+    F.when(F.col("age") < 30, "young")
+     .when(F.col("age") < 50, "mid")
+     .otherwise("senior")
+)
+
+# Test against a 3-row DataFrame — same as you would with a function
+test_df = spark.createDataFrame([(25,), (45,), (65,)], ["age"])
+test_df.select(_age_group.alias("age_group")).show()
+
+# Or test the full enrichment dict
+ENRICHMENT_COLS = {
+    "age_group":    _age_group,
+    "status_clean": F.when(F.col("status") == "active", "ACTIVE")
+                     .otherwise("INACTIVE"),
+}
+
+test_df2 = spark.createDataFrame(
+    [(25, "active"), (45, "inactive")],
+    ["age", "status"],
+)
+test_df2.withColumns(ENRICHMENT_COLS).show()
+```
+
+::: {.callout-note appearance="simple"}
+Extract expressions to variables or the dict to a constant — both are testable with a 3-row dummy DataFrame.
+
+## References & Further Reading
+
+-   [PySpark DataFrame.withColumns API](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.DataFrame.withColumns.html)
+-   [PySpark DataFrame.transform API](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.DataFrame.transform.html)
+-   [From 20 withColumn() Calls to 1 withColumns()](withColumns.qmd)
+-   [Rename Multiple Columns with withColumnsRenamed()](withColumnsRenamed.qmd)
+
+::: dd-bottom-cta
+```         
+<h3>Subscribe for daily Databricks tips</h3>
+<p>Get practical examples and concise updates delivered to your inbox.</p>
+<form action="https://dev.us21.list-manage.com/subscribe/post?u=acde8b752414ef5c69a9ed1b4&amp;id=1fc9e5bce7&amp;f_id=00b8dde6f0" method="post" target="_blank">
+    <input type="email" name="EMAIL" required placeholder="Email address" />
+    <input type="text" name="FNAME" placeholder="First name (optional)" />
+    <button type="submit">Subscribe</button>
+</form>
+```
+:::
