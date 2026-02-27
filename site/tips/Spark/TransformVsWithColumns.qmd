@@ -227,6 +227,7 @@ test_df2.withColumns(ENRICHMENT_COLS).show()
 
 ::: {.callout-note appearance="simple"}
 Extract expressions to variables or the dict to a constant — both are testable with a 3-row dummy DataFrame.
+:::
 
 ## References & Further Reading
 
