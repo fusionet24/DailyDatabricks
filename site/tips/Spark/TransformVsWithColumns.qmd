@@ -237,11 +237,11 @@ Extract expressions to variables or the dict to a constant — both are testable
 -   [Rename Multiple Columns with withColumnsRenamed()](withColumnsRenamed.qmd)
 
 <div class="dd-bottom-cta">
-	<h3>Subscribe for daily Databricks tips</h3>
-	<p>Get practical examples and concise updates delivered to your inbox.</p>
-	<form action="https://dev.us21.list-manage.com/subscribe/post?u=acde8b752414ef5c69a9ed1b4&amp;id=1fc9e5bce7&amp;f_id=00b8dde6f0" method="post" target="_blank">
-		<input type="email" name="EMAIL" required placeholder="Email address" />
-		<input type="text" name="FNAME" placeholder="First name (optional)" />
-		<button type="submit">Subscribe</button>
-	</form>
+<h3>Subscribe for daily Databricks tips</h3>
+<p>Get practical examples and concise updates delivered to your inbox.</p>
+<form action="https://dev.us21.list-manage.com/subscribe/post?u=acde8b752414ef5c69a9ed1b4&amp;id=1fc9e5bce7&amp;f_id=00b8dde6f0" method="post" target="_blank">
+<input type="email" name="EMAIL" required placeholder="Email address" />
+<input type="text" name="FNAME" placeholder="First name (optional)" />
+<button type="submit">Subscribe</button>
+</form>
 </div>
