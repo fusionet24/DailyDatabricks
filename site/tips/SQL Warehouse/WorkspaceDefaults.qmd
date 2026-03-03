@@ -1,0 +1,193 @@
+---
+title: "Sensible SQL Warehouse Defaults for Governance and Cost Control"
+description: "Configure workspace-level SQL Warehouse settings in Databricks with sensible defaults to improve governance, prevent runaway queries, and control costs."
+date-modified: "03/03/2026"
+date-format: "DD/MM/YYYY"
+categories: [sql, governance, cost]
+toc: true
+toc-title: Navigation
+tags:
+    - databricks
+    - sql
+    - governance
+    - cost
+    - configuration
+    - tips
+draft: false
+---
+
+## Summary
+
+-   Configure workspace-level SQL configuration parameters for all SQL Warehouses
+-   Set sensible defaults for `STATEMENT_TIMEOUT`, `ANSI_MODE`, `TIMEZONE`, and more
+-   Prevent runaway queries, enforce SQL standards, and improve cost governance
+
+## Introduction
+
+Every Databricks workspace ships with SQL Warehouse configuration parameters set to very permissive defaults. A query can run for **2 full days** before it times out. ANSI mode may be off for older accounts, hiding silent behaviour. These are the kind of settings that, left untouched, lead to bill shock and hard-to-diagnose data quality issues.
+
+The good news is that workspace admins can override these defaults in a single place and have them apply to **every SQL Warehouse** in the workspace. This post walks through the key parameters and recommends sensible [starting points](https://www.thoughtworks.com/insights/topic/sensible-defaults).
+
+::: {.callout-note title="Admin Access Required" appearance="simple"}
+
+You must be a workspace admin to view and change these settings. If you're not an admin, share this post with your team and advocate for setting these defaults.
+
+They can only be set at the workspace level, not for all workspaces in an databricks account, so each workspace needs to be configured individually.
+
+:::
+
+## Where to Set These Parameters
+
+Navigate to **Admin Settings > Compute > SQL Warehouses > SQL Configuration Parameters**.
+
+Enter one key-value pair per line, separating the parameter name from its value with a space:
+
+```
+STATEMENT_TIMEOUT 3600
+ANSI_MODE true
+TIMEZONE UTC
+```
+
+::: {.callout-warning title="Restart Warning" appearance="simple"}
+Changing any SQL configuration parameter will **automatically restart all running SQL Warehouses** in the workspace. Plan changes during a maintenance window or low-usage period.
+:::
+
+You can also set these via the [SQL Warehouses API](https://docs.databricks.com/api/workspace/warehouses) for infrastructure-as-code workflows.
+
+## Recommended Defaults
+
+### 1. STATEMENT_TIMEOUT
+
+| | |
+|---|---|
+| **What it does** | Cancels any SQL statement that exceeds the configured number of seconds |
+| **System default** | `172800` (2 days) |
+| **Recommended** | `3600` (1 hour) |
+
+```sql
+-- Set at workspace level via Admin Settings, or per-session:
+SET STATEMENT_TIMEOUT = 3600;
+```
+
+A 2-day timeout is almost never what you want. Runaway queries are the single biggest source of unexpected SQL Warehouse costs. Setting a 1-hour default catches the vast majority of accidental full-table scans and cartesian joins while still allowing legitimate long-running analytics.
+
+::: {.callout-tip title="Per-Session Override" appearance="simple"}
+Users who genuinely need longer execution times can override the timeout in their session with `SET STATEMENT_TIMEOUT = 7200;` — so this default doesn't block anyone, it just makes the dangerous case opt-in rather than opt-out.
+:::
+
+### 2. ANSI_MODE
+
+| | |
+|---|---|
+| **What it does** | Enforces strict ANSI SQL behaviour for casting, arithmetic overflow, and string operations |
+| **System default** | `TRUE` (accounts created after Oct 2022), `FALSE` (older accounts) |
+| **Recommended** | `TRUE` |
+
+```sql
+SET ANSI_MODE = true;
+```
+
+With ANSI mode **off**, operations like dividing by zero return `NULL` instead of an error, and implicit casts can silently truncate data. Turning it on surfaces these issues at query time rather than hiding them in your data. If you have an older workspace still on `FALSE`, switching to `TRUE` is one of the highest-impact governance changes you can make.
+
+::: {.callout-note title="Migration Consideration" appearance="simple"}
+Enabling ANSI mode on an existing workspace may cause some legacy queries to fail — particularly those relying on silent overflow or implicit type coercion. Test with a representative query set first.
+:::
+
+### 3. TIMEZONE
+
+| | |
+|---|---|
+| **What it does** | Sets the default time zone for timestamp operations |
+| **System default** | `UTC` |
+| **Recommended** | `UTC` |
+
+```sql
+SET TIMEZONE = 'UTC';
+```
+
+Unless you have a strong regional reason to change this, keep it at `UTC`. Consistent time zone handling across all warehouses avoids a whole class of subtle bugs when joining or comparing timestamp data across tables, pipelines, and teams.
+
+### 4. USE_CACHED_RESULT
+
+| | |
+|---|---|
+| **What it does** | Caches and reuses query results when possible |
+| **System default** | `TRUE` |
+| **Recommended** | `TRUE` |
+
+This is already set to a sensible default. Leave it enabled — it reduces compute costs for repeated queries (dashboards, reports) without any correctness risk, since the cache is invalidated when underlying data changes.
+
+### 5. LEGACY_TIME_PARSER_POLICY
+
+| | |
+|---|---|
+| **What it does** | Controls how dates and timestamps are parsed and formatted |
+| **System default** | `EXCEPTION` |
+| **Recommended** | `EXCEPTION` |
+
+The `EXCEPTION` default is the strictest and safest option — it raises an error on ambiguous date/time parsing rather than silently guessing. Keep it.
+
+## Putting It All Together
+
+Here is a recommended workspace-level configuration block you can paste directly into the SQL Configuration Parameters textbox:
+
+```
+STATEMENT_TIMEOUT 3600
+ANSI_MODE true
+TIMEZONE UTC
+USE_CACHED_RESULT true
+LEGACY_TIME_PARSER_POLICY EXCEPTION
+```
+
+## Managing as Infrastructure as Code
+
+Clicking through the Admin UI is fine for a single workspace, but if you manage multiple environments (dev, staging, prod) you want these settings version-controlled and reproducible.
+
+### Terraform
+
+The [`databricks_sql_global_config`](https://registry.terraform.io/providers/databricks/databricks/latest/docs/resources/sql_global_config) resource lets you set all the recommended parameters in one block using `sql_config_params`:
+
+```hcl
+resource "databricks_sql_global_config" "this" {
+  sql_config_params = {
+    "STATEMENT_TIMEOUT"         = "3600"
+    "ANSI_MODE"                 = "true"
+    "TIMEZONE"                  = "UTC"
+    "USE_CACHED_RESULT"         = "true"
+    "LEGACY_TIME_PARSER_POLICY" = "EXCEPTION"
+  }
+}
+```
+
+
+::: {.callout-warning title="Restart Warning" appearance="simple"}
+Just like the UI, any change to this Terraform resource will **automatically restart all running SQL Warehouses** in the workspace. Run `terraform plan` carefully and apply during low-usage periods.
+:::
+
+### Databricks Asset Bundles (DABs)
+
+DABs can manage individual [`sql_warehouse`](https://docs.databricks.com/aws/en/dev-tools/bundles/resources) resources (size, auto-stop, serverless, etc.) but **does not currently support a `sql_global_config` resource type** for workspace-level SQL configuration parameters.
+
+So use Terraform or the [SQL Warehouses API](https://docs.databricks.com/api/workspace/warehouses) to manage these global defaults alongside your DABs deployments.
+
+## Quick Reference Table
+
+| Parameter | System Default | Recommended | Why |
+|---|---|---|---|
+| `STATEMENT_TIMEOUT` | 172,800s (2 days) | 3,600s (1 hour) | Prevent runaway query costs |
+| `ANSI_MODE` | `TRUE` / `FALSE`* | `TRUE` | Enforce SQL standards, catch bugs early |
+| `TIMEZONE` | `UTC` | `UTC` | Consistency across pipelines |
+| `USE_CACHED_RESULT` | `TRUE` | `TRUE` | Free cost savings on repeated queries |
+| `LEGACY_TIME_PARSER_POLICY` | `EXCEPTION` | `EXCEPTION` | Strictest date parsing, no silent errors |
+
+*\*`FALSE` for accounts created before October 2022*
+
+## References & Further Reading
+
+-   [SQL Warehouse Admin Settings](https://docs.databricks.com/aws/en/admin/sql/)
+-   [Configuration Parameters Reference](https://docs.databricks.com/sql/language-manual/sql-ref-parameters.html)
+-   [STATEMENT_TIMEOUT Parameter](https://docs.databricks.com/aws/en/sql/language-manual/parameters/statement_timeout)
+-   [ANSI_MODE Parameter](https://docs.databricks.com/aws/en/sql/language-manual/parameters/ansi_mode)
+-   [TIMEZONE Parameter](https://docs.databricks.com/aws/en/sql/language-manual/parameters/timezone)
+-   [databricks_sql_global_config Terraform Resource](https://registry.terraform.io/providers/databricks/databricks/latest/docs/resources/sql_global_config)
+-   [Databricks Asset Bundles Resources](https://docs.databricks.com/aws/en/dev-tools/bundles/resources)
