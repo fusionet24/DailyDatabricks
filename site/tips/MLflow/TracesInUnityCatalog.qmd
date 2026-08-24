@@ -1,0 +1,132 @@
+---
+title: "Storing MLflow Traces in Unity Catalog"
+description: "Learn how to store MLflow traces in Unity Catalog tables using OpenTelemetry format for governed, queryable observability of your AI applications."
+date-modified: "07/02/2026"
+date-format: "DD/MM/YYYY"
+categories: [MLflow, Unity Catalog, Observability]
+toc: true
+toc-title: Navigation
+tags:
+    - databricks
+    - mlflow
+    - unity-catalog
+    - opentelemetry
+    - observability
+    - generative-ai
+    - tips
+draft: false
+---
+
+## Summary
+
+-   Store MLflow traces as Delta tables in Unity Catalog for unlimited retention, SQL querying, and governed access control
+-   Traces use OpenTelemetry-compatible format, making them interoperable with your existing observability stack
+-   Access control is managed through Unity Catalog permissions rather than experiment-level ACLs
+
+## Introduction
+
+If you are building generative AI applications on Databricks, observability matters. You need to understand what your models and agents are doing, how they are performing, and where things go wrong. MLflow has long provided tracing capabilities, but traces were historically tied to MLflow experiments with limited querying and access control options.
+
+As of January 2026, you can now store MLflow traces directly in Unity Catalog tables using an OpenTelemetry-compatible (OTEL) format. This means your trace data lives alongside the rest of your governed data assets — queryable with SQL, secured with UC permissions, and stored in Delta tables with unlimited retention. This feature is currently in Beta.
+
+## Why Store Traces in Unity Catalog?
+
+Compared to the default experiment-based storage, Unity Catalog trace storage gives you several advantages:
+
+-   **Governed access control** — permissions are managed through UC schema and table-level grants, not experiment ACLs
+-   **SQL queryability** — query trace data directly from any Databricks SQL warehouse
+-   **Unlimited storage** — Delta tables handle long-term retention without the constraints of experiment storage
+-   **Broad visibility** — anyone with table access can view traces regardless of which experiment produced them
+-   **OTEL compatibility** — trace IDs use URI format, improving interoperability with external observability tools
+
+## Getting Started
+
+You will need MLflow 3.9.0 or later and a Unity Catalog-enabled workspace.
+
+``` python
+pip install "mlflow[databricks]>=3.9.0" --upgrade
+```
+
+### Link an Experiment to a UC Schema
+
+First, create or select an experiment and link it to a Unity Catalog schema. Three Delta tables are created automatically to store spans, metrics, and logs.
+
+``` python
+import mlflow
+from mlflow.entities import UCSchemaLocation
+from mlflow.tracing.enablement import set_experiment_trace_location
+
+mlflow.set_tracking_uri("databricks")
+
+experiment = mlflow.get_experiment_by_name("/my-genai-experiment")
+if not experiment:
+    experiment_id = mlflow.create_experiment(name="/my-genai-experiment")
+else:
+    experiment_id = experiment.experiment_id
+
+# Link to Unity Catalog schema — tables are created automatically
+set_experiment_trace_location(
+    location=UCSchemaLocation(catalog_name="ml_catalog", schema_name="traces"),
+    experiment_id=experiment_id,
+)
+```
+
+### Log Traces
+
+Once linked, point your tracing destination at the UC schema and traces flow into Delta tables automatically.
+
+``` python
+import mlflow
+from mlflow.entities import UCSchemaLocation
+
+mlflow.set_tracking_uri("databricks")
+
+mlflow.tracing.set_destination(
+    destination=UCSchemaLocation(
+        catalog_name="ml_catalog",
+        schema_name="traces",
+    )
+)
+
+@mlflow.trace
+def classify_ticket(text):
+    # Your model inference logic here
+    return {"category": "billing", "confidence": 0.94}
+
+classify_ticket("I was charged twice for my subscription")
+```
+
+### Query Traces with SQL
+
+Because traces are stored in Delta tables, you can run standard SQL against them for analysis and monitoring.
+
+``` sql
+-- Find slow spans in the last 24 hours
+SELECT
+    trace_id,
+    span_name,
+    duration_ms,
+    status_code
+FROM ml_catalog.traces.mlflow_experiment_trace_otel_spans
+WHERE start_time > current_timestamp() - INTERVAL 24 HOURS
+  AND duration_ms > 5000
+ORDER BY duration_ms DESC;
+```
+
+::: {.callout-warning title="Limitations to Know" appearance="simple"}
+-   Ingestion is limited to 100 traces/second per workspace and 100MB/second per table
+-   UI performance may degrade beyond 2TB of stored trace data
+-   Individual trace deletion is not supported through the UI — use SQL `DELETE` statements directly on the UC tables
+-   Currently in Beta with regional availability limited to `eastus`, `eastus2`, and `westeurope`
+:::
+
+::: {.callout-tip title="Pro Tip" appearance="simple"}
+You can export traces to both Unity Catalog and an external OpenTelemetry service simultaneously using MLflow's dual export configuration. This lets you keep your existing Datadog, Grafana, or other OTEL-compatible tooling while also getting the governance and SQL queryability of UC.
+:::
+
+## Further Reading
+
+-   [Store MLflow Traces in Unity Catalog](https://learn.microsoft.com/en-us/azure/databricks/mlflow3/genai/tracing/trace-unity-catalog)
+-   [MLflow Tracing Concepts](https://docs.databricks.com/aws/en/mlflow3/genai/tracing/tracing-101)
+-   [OpenTelemetry Export from MLflow](https://docs.databricks.com/aws/en/mlflow3/genai/tracing/integrations/open-telemetry)
+-   [January 2026 Release Notes](https://docs.databricks.com/aws/en/release-notes/product/2026/january)
