@@ -22,3 +22,7 @@ site/site_libs/quarto-nav/quarto-nav.js
 site/site_libs/quarto-search/autocomplete.umd.js
 site/site_libs/quarto-search/fuse.min.js
 site/site_libs/quarto-search/quarto-search.js
+
+# Python bytecode
+__pycache__/
+*.py[cod]

@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
-"""Generate a streamlined 5-slide carousel PDF from a .qmd tip file.
+"""Generate a LinkedIn carousel PDF from a .qmd tip file.
+
+Slides are: a hook, one slide per selected code block, the Summary bullets,
+and a call to action.
 
 Usage:
     python scripts/generate_carousel.py site/tips/Performance/NOOP.qmd
-    python scripts/generate_carousel.py site/tips/Performance/NOOP.qmd --output-dir output/
+    python scripts/generate_carousel.py site/tips/Performance/NOOP.qmd --list-code
+    python scripts/generate_carousel.py site/tips/Performance/NOOP.qmd --code-index 2 5
 """
 
 import argparse
@@ -74,8 +78,30 @@ def _slide_hook(tip):
     return canvas
 
 
-def _slide_code(tip, slide_num=2):
-    """Slides 2-3: Code Card style content slides."""
+def _fit_code_font_size(draw, code, max_w, max_h, lo=20, hi=40):
+    """Pick the largest mono font size where the code fits width and height.
+
+    Short snippets are the common case, so scaling up avoids a small block
+    stranded in the middle of a portrait slide.
+    """
+    lines = code.split("\n")
+    longest = max(lines, key=len) if lines else ""
+    padding = 24
+    for size in range(hi, lo - 1, -1):
+        mono = font_mono(size)
+        fits_width = text_width(draw, longest, mono) <= max_w - padding * 2
+        fits_height = len(lines) * (size + 8) + padding * 2 <= max_h
+        if fits_width and fits_height:
+            return size
+    return lo
+
+
+def _slide_code(tip, block, show_description=False):
+    """Content slide: one code block, titled by the section it came from.
+
+    `show_description` adds the post description under the code. It is used
+    on the first code slide only, so later slides do not repeat it.
+    """
     canvas = Image.new("RGB", (W, H), OFF_WHITE)
     draw = ImageDraw.Draw(canvas)
     draw_red_frame(draw, W, H)
@@ -96,28 +122,50 @@ def _slide_code(tip, slide_num=2):
 
     # Red separator
     draw.rectangle([margin, y, margin + 50, y + 3], fill=RED)
+    y += 26
+
+    # Kicker: the post title, so each slide stands alone in the feed
+    kicker_font = font_bold(20)
+    kicker_lines = wrap_text(tip.title.upper(), kicker_font, content_w, draw)
+    for line in kicker_lines[:2]:
+        draw.text((margin, y), line, font=kicker_font, fill=RED)
+        y += 26
+    y += 14
+
+    # Headline: the section heading this code block sits under
+    headline = block.heading or tip.title
+    title_font = font_bold(46)
+    for line in wrap_text(headline, title_font, content_w, draw)[:3]:
+        draw.text((margin, y), line, font=title_font, fill=CHARCOAL)
+        y += 56
     y += 24
 
-    # Title
-    title_font = font_bold(44)
-    title_text = tip.title.upper()
-    title_lines = wrap_text(title_text, title_font, content_w, draw)
-    for line in title_lines[:3]:
-        draw.text((margin, y), line, font=title_font, fill=CHARCOAL)
-        y += 54
-    y += 20
+    # Code block, scaled up to use the space that is actually left
+    cta_reserve = 90
+    available_h = H - y - FRAME_WIDTH - cta_reserve
+    desc_font = font_regular(26)
+    desc_lines = (
+        wrap_text(tip.description, desc_font, content_w, draw)[:4]
+        if show_description else []
+    )
+    desc_h = len(desc_lines) * 34 + (28 if desc_lines else 0)
 
-    # Code block - larger area for portrait format
-    code = tip.code_snippet or "# No code snippet"
-    code_h = _draw_code_block(draw, canvas, code, margin, y, content_w, 600, code_font_size=22)
+    code_max_h = available_h - desc_h
+    code_size = _fit_code_font_size(draw, block.code, content_w, code_max_h)
+
+    # A wide snippet is capped by line length, not height, so centre whatever
+    # slack is left rather than stranding it all below the block.
+    n_lines = len(block.code.split("\n"))
+    estimated_h = min(n_lines * (code_size + 8) + 48, code_max_h)
+    y += max(0, (available_h - estimated_h - desc_h) // 2)
+
+    code_h = _draw_code_block(
+        draw, canvas, block.code, margin, y, content_w, code_max_h,
+        code_font_size=code_size, lang=block.lang,
+    )
     y += code_h + 28
 
-    # Description
-    desc_font = font_regular(26)
-    remaining_h = H - y - FRAME_WIDTH - 80
-    desc_lines = wrap_text(tip.description, desc_font, content_w, draw)
-    max_desc_lines = max(1, remaining_h // 34)
-    for line in desc_lines[:max_desc_lines]:
+    for line in desc_lines:
         draw.text((margin, y), line, font=desc_font, fill=WARM_GRAY)
         y += 34
 
@@ -132,7 +180,7 @@ def _slide_code(tip, slide_num=2):
 
 
 def _slide_summary(tip):
-    """Slide 4: Key takeaway as a bold statement."""
+    """Key takeaway slide: the Summary bullets, rendered as bullets."""
     canvas = Image.new("RGB", (W, H), CHARCOAL)
     draw = ImageDraw.Draw(canvas)
     draw_red_frame(draw, W, H)
@@ -151,26 +199,36 @@ def _slide_summary(tip):
     sep_w = 60
     draw.rectangle([(W - sep_w) // 2, y_sep, (W + sep_w) // 2, y_sep + 3], fill=RED)
 
-    # Summary points or callout text
-    summary_text = ""
-    if tip.summary_points:
-        summary_text = "\n".join(f"  {p}" for p in tip.summary_points[:4])
-    elif tip.callout_text:
-        summary_text = tip.callout_text
-    else:
-        summary_text = tip.description
-
     text_font = font_regular(34)
-    lines = wrap_text(summary_text, text_font, content_w, draw)
+    line_h = 46
+    bullet_gap = 26
+    bullet_indent = 40
 
-    line_h = 44
-    total_h = min(len(lines), 10) * line_h
-    y = (H - total_h) // 2 + 20
+    if tip.summary_points:
+        # Wrap each point separately so bullets stay distinct.
+        points = [
+            wrap_text(p, text_font, content_w - bullet_indent, draw)
+            for p in tip.summary_points[:4]
+        ]
+        total_h = sum(len(p) * line_h for p in points) + bullet_gap * (len(points) - 1)
+        y = (H - total_h) // 2
 
-    for line in lines[:10]:
-        lw_line = text_width(draw, line, text_font)
-        draw.text(((W - lw_line) // 2, y), line, font=text_font, fill=WHITE)
-        y += line_h
+        for point_lines in points:
+            draw.ellipse(
+                [margin, y + 16, margin + 10, y + 26], fill=RED
+            )
+            for line in point_lines:
+                draw.text((margin + bullet_indent, y), line, font=text_font, fill=WHITE)
+                y += line_h
+            y += bullet_gap
+    else:
+        text = tip.callout_text or tip.description
+        lines = wrap_text(text, text_font, content_w, draw)[:10]
+        y = (H - len(lines) * line_h) // 2
+        for line in lines:
+            lw_line = text_width(draw, line, text_font)
+            draw.text(((W - lw_line) // 2, y), line, font=text_font, fill=WHITE)
+            y += line_h
 
     # Logo at bottom
     logo = load_logo("tip", max_height=44)
@@ -249,19 +307,39 @@ def _slide_cta(tip):
     return canvas
 
 
-def generate_carousel(qmd_path, output_dir=None):
-    """Generate a 5-slide carousel PDF from a .qmd file."""
+def generate_carousel(qmd_path, output_dir=None, code_indices=None):
+    """Generate a carousel PDF from a .qmd file.
+
+    `code_indices` is a list of 1-based indices into the post's fenced code
+    blocks, choosing which become content slides. Defaults to the first block.
+    """
     tip = parse_qmd(qmd_path)
     if not tip.title:
         print(f"Error: Could not parse title from {qmd_path}")
         sys.exit(1)
 
-    slides = [
-        _slide_hook(tip),
-        _slide_code(tip),
-        _slide_summary(tip),
-        _slide_cta(tip),
+    if not tip.code_blocks:
+        print(f"Error: No code blocks found in {qmd_path}")
+        sys.exit(1)
+
+    if code_indices:
+        try:
+            blocks = [tip.code_blocks[i - 1] for i in code_indices]
+        except IndexError:
+            print(
+                f"Error: --code-index out of range. {qmd_path} has "
+                f"{len(tip.code_blocks)} code blocks."
+            )
+            sys.exit(1)
+    else:
+        blocks = [tip.code_blocks[0]]
+
+    slides = [_slide_hook(tip)]
+    slides += [
+        _slide_code(tip, block, show_description=(i == 0))
+        for i, block in enumerate(blocks)
     ]
+    slides += [_slide_summary(tip), _slide_cta(tip)]
 
     out_dir = output_dir or OUTPUT_DIR
     os.makedirs(out_dir, exist_ok=True)
@@ -282,9 +360,21 @@ def generate_carousel(qmd_path, output_dir=None):
     return pdf_path
 
 
+def list_code_blocks(qmd_path):
+    """Print the post's code blocks so you can pick indices for --code-index."""
+    tip = parse_qmd(qmd_path)
+    if not tip.code_blocks:
+        print("No code blocks found.")
+        return
+    for i, block in enumerate(tip.code_blocks, 1):
+        first_line = block.code.splitlines()[0][:60]
+        print(f"{i:>2}. [{block.lang}] {block.heading or '(no heading)'}")
+        print(f"    {first_line}")
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Generate a 5-slide carousel PDF from a .qmd tip file."
+        description="Generate a LinkedIn carousel PDF from a .qmd tip file."
     )
     parser.add_argument("qmd_file", help="Path to the .qmd tip file")
     parser.add_argument(
@@ -292,13 +382,35 @@ def main():
         default=None,
         help="Output directory (default: output/)",
     )
+    parser.add_argument(
+        "--code-index",
+        type=int,
+        nargs="+",
+        default=None,
+        metavar="N",
+        help="1-based code block indices to turn into slides, in order "
+             "(default: the first block). Use --list-code to see them.",
+    )
+    parser.add_argument(
+        "--list-code",
+        action="store_true",
+        help="List the post's code blocks with their indices, then exit.",
+    )
     args = parser.parse_args()
 
     if not os.path.exists(args.qmd_file):
         print(f"Error: File not found: {args.qmd_file}")
         sys.exit(1)
 
-    generate_carousel(args.qmd_file, output_dir=args.output_dir)
+    if args.list_code:
+        list_code_blocks(args.qmd_file)
+        return
+
+    generate_carousel(
+        args.qmd_file,
+        output_dir=args.output_dir,
+        code_indices=args.code_index,
+    )
 
 
 if __name__ == "__main__":

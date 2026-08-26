@@ -1,0 +1,165 @@
+---
+title: "Grant Write Access Without Handing Over the Schema"
+description: "Unity Catalog now has INSERT, UPDATE, and DELETE privileges. Use them instead of MODIFY to let a principal change a table's data without changing its shape."
+date-modified: "24/08/2026"
+date-format: "DD/MM/YYYY"
+categories: [Unity Catalog, governance, sql]
+toc: true
+toc-title: Navigation
+tags:
+    - databricks
+    - unity-catalog
+    - governance
+    - permissions
+    - sql
+    - tips
+draft: false
+---
+
+## Summary
+
+-   Unity Catalog splits `MODIFY` into three child privileges: `INSERT`, `UPDATE`, and `DELETE`.
+-   Grant one of them when a principal must change a table's data but not its schema.
+-   `MODIFY` still covers `ALTER TABLE`, `OPTIMIZE`, `VACUUM`, and schema evolution.
+
+## The Problem With MODIFY
+
+Until now, Unity Catalog offered one write privilege: `MODIFY`. Granting it to an ingestion job so the job can append rows also lets that job drop a column, truncate the table, or rewrite the schema. Most write workloads need one verb, so `MODIFY` grants far more than they use.
+
+As of August 2026, you can grant that single verb. `INSERT`, `UPDATE`, and `DELETE` are child privileges of `MODIFY`, and each covers a subset of its write access.
+
+::: {.callout-important title="Beta" appearance="simple"}
+This feature is in Beta. A workspace admin enables it from **Settings > Previews**. It requires Databricks Runtime 18.1 or above and runs on serverless compute, SQL warehouses, and classic compute in standard access mode. Dedicated access mode is not supported — use `MODIFY` there.
+:::
+
+## Working Example
+
+The example below builds an append-only ingestion path. The `order-loaders` group can add orders and read them back. It cannot delete rows, and it cannot change the table's shape.
+
+### 1. Set Up the Table
+
+Run this as a catalog admin or the table owner.
+
+``` sql
+CREATE SCHEMA IF NOT EXISTS main.dml_demo;
+
+CREATE TABLE IF NOT EXISTS main.dml_demo.orders (
+  order_id BIGINT,
+  customer STRING,
+  amount   DECIMAL(10, 2)
+);
+```
+
+### 2. Grant the Privileges
+
+A fine-grained DML privilege never works alone. The principal also needs `SELECT` on the table and traversal privileges on the parents.
+
+``` sql
+-- Traversal. Required to reach the table at all.
+GRANT USE CATALOG ON CATALOG main TO `order-loaders`;
+GRANT USE SCHEMA ON SCHEMA main.dml_demo TO `order-loaders`;
+
+-- Read the data, and append to it. Nothing else.
+GRANT SELECT ON TABLE main.dml_demo.orders TO `order-loaders`;
+GRANT INSERT ON TABLE main.dml_demo.orders TO `order-loaders`;
+```
+
+Confirm the result:
+
+``` sql
+SHOW GRANTS `order-loaders` ON TABLE main.dml_demo.orders;
+```
+
+``` text
+principal      actionType  objectType  objectKey
+-------------  ----------  ----------  ----------------------
+order-loaders  SELECT      TABLE       main.dml_demo.orders
+order-loaders  INSERT      TABLE       main.dml_demo.orders
+```
+
+### 3. Confirm the Boundary
+
+Run the following as a member of `order-loaders`. The first two statements succeed; the rest fail with `PERMISSION_DENIED`.
+
+``` sql
+-- Succeeds. Covered by INSERT.
+INSERT INTO main.dml_demo.orders VALUES (1, 'Acme Corp', 250.00);
+
+-- Succeeds. Covered by SELECT.
+SELECT * FROM main.dml_demo.orders;
+
+-- Fails. Requires DELETE.
+DELETE FROM main.dml_demo.orders WHERE order_id = 1;
+
+-- Fails. Requires INSERT and DELETE, because it replaces existing rows.
+INSERT OVERWRITE main.dml_demo.orders VALUES (2, 'Globex', 99.00);
+
+-- Fails. Schema changes still require MODIFY.
+ALTER TABLE main.dml_demo.orders ADD COLUMN region STRING;
+```
+
+The job can do its one job. The blast radius of a bad deploy is now bounded by the privilege, not by review discipline.
+
+## Which Privilege Covers Which Operation
+
+| Operation | Required privileges |
+|---|---|
+| `INSERT INTO` | `INSERT` |
+| `UPDATE` | `UPDATE` |
+| `DELETE` | `DELETE` |
+| `TRUNCATE` | `DELETE` |
+| `INSERT OVERWRITE`, `REPLACE WHERE`, dynamic partition overwrite | `INSERT` and `DELETE` |
+| `MERGE INTO` | `INSERT`, `UPDATE`, or `DELETE`, matching the actions in the statement |
+| Schema evolution, `ALTER TABLE`, `OPTIMIZE`, `VACUUM` | `MODIFY` |
+
+`MERGE INTO` is the useful case. A merge that only matches and updates needs `UPDATE`; add a `WHEN NOT MATCHED THEN INSERT` clause and it also needs `INSERT`. Grant the clauses your statement actually uses:
+
+``` sql
+GRANT SELECT, UPDATE, INSERT ON TABLE main.dml_demo.orders TO `order-upserters`;
+```
+
+## Two Behaviours to Watch
+
+### Granting MODIFY Does Not Grant Its Children
+
+`MODIFY` and its child privileges are granted and revoked independently. Granting `MODIFY` does not grant `INSERT`. More importantly, revoking `MODIFY` does not revoke an `INSERT` that was granted explicitly:
+
+``` sql
+REVOKE MODIFY ON TABLE main.dml_demo.orders FROM `order-loaders`;
+-- An explicitly granted INSERT survives this. Revoke it too.
+REVOKE INSERT ON TABLE main.dml_demo.orders FROM `order-loaders`;
+```
+
+Audit with `SHOW GRANTS` after any revoke. Do not assume that dropping the parent privilege closed the door.
+
+### Catalog and Schema Grants Cascade
+
+Privilege inheritance applies here as it does elsewhere. Granting `INSERT` on a schema grants it on every table in that schema, including tables created later:
+
+``` sql
+-- Every current and future table in the schema becomes appendable.
+GRANT INSERT ON SCHEMA main.dml_demo TO `order-loaders`;
+```
+
+Use a schema-level grant for a landing zone you own end to end. Grant at the table level everywhere else.
+
+::: {.callout-warning title="Path-Based Access" appearance="simple"}
+Fine-grained DML privileges apply to table-based access only. Writing to an external table by its storage path still requires `MODIFY`.
+:::
+
+## When to Use Each
+
+| Principal | Grant |
+|---|---|
+| Append-only ingestion job | `SELECT`, `INSERT` |
+| CDC or upsert pipeline | `SELECT`, `INSERT`, `UPDATE`, `DELETE` |
+| GDPR erasure service | `SELECT`, `DELETE` |
+| Correction or backfill tool | `SELECT`, `UPDATE` |
+| Table owner or maintenance job | `MODIFY` |
+
+## References & Further Reading
+
+-   [Fine-grained DML privileges](https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/access-control/fine-grained-dml-privileges)
+-   [Unity Catalog privileges reference](https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/access-control/privileges-reference)
+-   [Privilege inheritance](https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/access-control/permissions-concepts)
+-   [August 2026 platform release notes](https://learn.microsoft.com/en-us/azure/databricks/release-notes/product/2026/august)

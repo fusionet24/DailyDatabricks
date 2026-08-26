@@ -5,6 +5,31 @@ import yaml
 from dataclasses import dataclass, field
 
 
+def strip_inline_markdown(text):
+    """Remove inline markdown so text renders cleanly as plain pixels.
+
+    Images cannot render `code`, **bold** or [links](url), so the markers
+    would otherwise be drawn literally.
+    """
+    if not text:
+        return text
+    # Links and images: keep the label, drop the target.
+    text = re.sub(r"!?\[([^\]]*)\]\([^)]*\)", r"\1", text)
+    # Bold, italic, and inline code markers.
+    text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
+    text = re.sub(r"(?<!\*)\*([^*\n]+)\*(?!\*)", r"\1", text)
+    text = re.sub(r"`([^`]+)`", r"\1", text)
+    return re.sub(r"[ \t]+", " ", text).strip()
+
+
+@dataclass
+class CodeBlock:
+    """A fenced code block, with the heading it sits under."""
+    lang: str = ""
+    code: str = ""
+    heading: str = ""
+
+
 @dataclass
 class TipContent:
     """Structured content extracted from a .qmd tip file."""
@@ -18,6 +43,31 @@ class TipContent:
     code_snippet: str = ""
     callout_text: str = ""
     summary_points: list = field(default_factory=list)
+    code_blocks: list = field(default_factory=list)
+
+
+def _extract_code_blocks(body):
+    """Return every fenced code block, tagged with its nearest heading."""
+    blocks = []
+    heading = ""
+    # DOTALL is needed for the code body, so the heading branch must use
+    # [^\n]* rather than .* or it would swallow the rest of the document.
+    pattern = re.compile(
+        r"^(#{1,6})[ \t]+([^\n]*)$|^```[ \t]*(\w+)?[ \t]*\n(.*?)^```",
+        re.DOTALL | re.MULTILINE,
+    )
+    for match in pattern.finditer(body):
+        if match.group(1):
+            heading = strip_inline_markdown(match.group(2).strip())
+        else:
+            code = match.group(4).strip()
+            if code:
+                blocks.append(CodeBlock(
+                    lang=(match.group(3) or "text").lower(),
+                    code=code,
+                    heading=heading,
+                ))
+    return blocks
 
 
 def parse_qmd(filepath):
@@ -34,7 +84,7 @@ def parse_qmd(filepath):
             fm = yaml.safe_load(fm_match.group(1))
             if fm:
                 tip.title = fm.get("title", "")
-                tip.description = fm.get("description", "")
+                tip.description = strip_inline_markdown(fm.get("description", ""))
                 tip.date_modified = fm.get("date-modified", "")
                 tip.image = fm.get("image", "")
 
@@ -54,22 +104,13 @@ def parse_qmd(filepath):
 
     body = content[fm_match.end():] if fm_match else content
 
-    # Extract first code block (prefer Python, then any)
-    code_blocks = re.findall(
-        r"```\s*(\w+)?\n(.*?)```",
-        body,
-        re.DOTALL,
-    )
-    if code_blocks:
-        # Prefer Python blocks
-        python_blocks = [(lang, code) for lang, code in code_blocks
-                         if lang and lang.lower() == "python"]
-        if python_blocks:
-            tip.code_lang, tip.code_snippet = python_blocks[0]
-        else:
-            tip.code_lang = code_blocks[0][0] or "text"
-            tip.code_snippet = code_blocks[0][1]
-        tip.code_snippet = tip.code_snippet.strip()
+    # Extract every code block, then pick a default (prefer Python).
+    tip.code_blocks = _extract_code_blocks(body)
+    if tip.code_blocks:
+        python_blocks = [b for b in tip.code_blocks if b.lang == "python"]
+        default = python_blocks[0] if python_blocks else tip.code_blocks[0]
+        tip.code_lang = default.lang
+        tip.code_snippet = default.code
 
     # Extract first callout block text
     callout_match = re.search(
@@ -78,7 +119,7 @@ def parse_qmd(filepath):
         re.DOTALL,
     )
     if callout_match:
-        tip.callout_text = callout_match.group(1).strip()
+        tip.callout_text = strip_inline_markdown(callout_match.group(1).strip())
 
     # Extract summary bullet points
     summary_match = re.search(
@@ -92,6 +133,6 @@ def parse_qmd(filepath):
         )
     if summary_match:
         points = re.findall(r'-\s+(.*)', summary_match.group(1))
-        tip.summary_points = [p.strip() for p in points]
+        tip.summary_points = [strip_inline_markdown(p.strip()) for p in points]
 
     return tip

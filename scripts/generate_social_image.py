@@ -40,9 +40,33 @@ PYTHON_KEYWORDS = {
     "del", "print",
 }
 
+SQL_KEYWORDS = {
+    "SELECT", "FROM", "WHERE", "INSERT", "INTO", "UPDATE", "DELETE", "SET",
+    "VALUES", "CREATE", "ALTER", "DROP", "TABLE", "SCHEMA", "CATALOG", "VIEW",
+    "GRANT", "REVOKE", "ON", "TO", "USE", "SHOW", "GRANTS", "MERGE", "MATCHED",
+    "WHEN", "THEN", "USING", "OVERWRITE", "REPLACE", "TRUNCATE", "OPTIMIZE",
+    "VACUUM", "ADD", "COLUMN", "IF", "NOT", "EXISTS", "AND", "OR", "AS",
+    "ORDER", "GROUP", "BY", "JOIN", "LEFT", "RIGHT", "INNER", "OUTER", "WITH",
+}
 
-def _highlight_line(draw, x, y, line, mono_font):
-    """Draw a single line of code with basic syntax highlighting."""
+# SQL is case-insensitive, so its keywords are matched in lowercase.
+_SQL_KEYWORDS_LOWER = {k.lower() for k in SQL_KEYWORDS}
+
+
+def _is_keyword(token, lang):
+    """Return True if `token` is a keyword in `lang`."""
+    if lang and lang.lower() in ("sql", "hcl", "text"):
+        return token.lower() in _SQL_KEYWORDS_LOWER
+    return token in PYTHON_KEYWORDS
+
+
+def _highlight_line(draw, x, y, line, mono_font, lang=None):
+    """Draw a single line of code with basic syntax highlighting.
+
+    `lang` selects the keyword set. SQL-like languages match
+    case-insensitively; anything else uses the Python keywords, so an
+    identifier such as `table` or `column` is not mistaken for a keyword.
+    """
     cursor_x = x
 
     # Handle comments
@@ -61,7 +85,7 @@ def _highlight_line(draw, x, y, line, mono_font):
         if (token.startswith('"') and token.endswith('"')) or \
            (token.startswith("'") and token.endswith("'")):
             color = SYN_STRING
-        elif token in PYTHON_KEYWORDS:
+        elif _is_keyword(token, lang):
             color = SYN_KEYWORD
         else:
             color = SYN_DEFAULT
@@ -90,7 +114,7 @@ def _truncate_line(line, mono_font, max_w, draw):
     return line[:lo] + "..." if lo < len(line) else line
 
 
-def _draw_code_block(draw, canvas, code, x, y, max_w, max_h, code_font_size=22, min_h=None):
+def _draw_code_block(draw, canvas, code, x, y, max_w, max_h, code_font_size=22, min_h=None, lang=None):
     """Draw a syntax-highlighted code block with dark background."""
     padding = 24
     mono = font_mono(code_font_size)
@@ -118,7 +142,7 @@ def _draw_code_block(draw, canvas, code, x, y, max_w, max_h, code_font_size=22, 
     # Draw each line with highlighting
     text_y = y + padding
     for line in lines:
-        _highlight_line(draw, x + padding, text_y, line, mono)
+        _highlight_line(draw, x + padding, text_y, line, mono, lang)
         text_y += line_h
 
     return block_h
