@@ -1,0 +1,190 @@
+---
+title: "Keep a Table in Sync with Partial Snapshots"
+description: "REPLACE USING flows replace every row that matches a key and leave the rest of the table untouched. Use them when your source sends partial snapshots instead of a change feed."
+date-modified: "27/08/2026"
+date-format: "DD/MM/YYYY"
+categories: [Lakeflow, Data Engineering, sql]
+toc: true
+toc-title: Navigation
+tags:
+    - databricks
+    - lakeflow
+    - streaming-tables
+    - cdc
+    - sql
+    - tips
+draft: false
+---
+
+## Summary
+
+-   A `REPLACE USING` flow replaces every row matching your key columns and leaves all other rows untouched.
+-   Use it when your source emits partial snapshots. It needs no primary key and no change data capture feed.
+-   `SEQUENCE BY` makes the result independent of the order updates arrive in.
+
+## The Problem With Partial Snapshots
+
+Plenty of sources never emit a change feed. They emit a snapshot of the slice that changed: today's orders, one region's inventory, the accounts a batch job touched. Each batch is complete for the keys it contains and silent about every other key.
+
+Neither obvious tool fits:
+
+-   `MERGE INTO` needs a primary key and a per-row action. A snapshot gives you neither. You write the deduplication yourself, then an anti-join to derive the deletes, and an out-of-order batch still corrupts the result.
+-   Overwriting the table discards every key the batch didn't mention.
+
+As of August 2026, `REPLACE USING` does this in one clause.
+
+::: {.callout-important title="Beta" appearance="simple"}
+`REPLACE USING` flows are in Beta. They require Databricks Runtime 18.2 or above. Standalone streaming tables run on system-managed serverless pipelines, so you don't choose the compute.
+:::
+
+## How It Works
+
+You give the flow key columns and one sequence column. On each update, the flow:
+
+-   Replaces every target row whose key appears in the incoming data.
+-   Leaves every key that is *absent* from the incoming data untouched.
+-   Applies only the highest sequence per key, so a late or replayed batch can't overwrite newer data.
+
+The second and third points are the ones that matter. Absence within a key is a delete; absence of a key is a no-op.
+
+## Working Example
+
+This example runs in any Unity Catalog-enabled workspace on a serverless SQL warehouse. It tracks inventory, where each source batch is a full snapshot of one warehouse and says nothing about the others.
+
+### 1. Create the Snapshot Source
+
+``` sql
+CREATE SCHEMA IF NOT EXISTS main.replace_using_demo;
+
+CREATE OR REPLACE TABLE main.replace_using_demo.inventory_snapshots (
+  warehouse_id INT,
+  sku          STRING,
+  on_hand      INT,
+  snapshot_seq INT
+);
+
+-- Snapshot 1. Covers both warehouses.
+INSERT INTO main.replace_using_demo.inventory_snapshots VALUES
+  (1, 'SKU-A', 10, 1),
+  (1, 'SKU-B',  5, 1),
+  (2, 'SKU-A',  7, 1);
+```
+
+### 2. Create the Streaming Table
+
+Key on `warehouse_id`, because a snapshot is authoritative for one whole warehouse. Sequence on `snapshot_seq`.
+
+``` sql
+CREATE OR REFRESH STREAMING TABLE main.replace_using_demo.inventory_current
+FLOW REPLACE USING (warehouse_id) SEQUENCE BY snapshot_seq BY NAME
+SELECT warehouse_id, sku, on_hand, snapshot_seq
+FROM STREAM(main.replace_using_demo.inventory_snapshots);
+```
+
+`BY NAME` is required in SQL. It matches columns by name rather than position.
+
+Check the result:
+
+``` sql
+SELECT * FROM main.replace_using_demo.inventory_current ORDER BY warehouse_id, sku;
+```
+
+``` text
+warehouse_id  sku     on_hand  snapshot_seq
+------------  ------  -------  ------------
+1             SKU-A        10             1
+1             SKU-B         5             1
+2             SKU-A         7             1
+```
+
+### 3. Land a Partial Snapshot
+
+Warehouse 1 sends a new snapshot. `SKU-A` has dropped to 4, `SKU-C` has arrived, and `SKU-B` has sold out, so it is simply missing. Warehouse 2 sends nothing.
+
+``` sql
+-- Snapshot 2. Warehouse 1 only.
+INSERT INTO main.replace_using_demo.inventory_snapshots VALUES
+  (1, 'SKU-A',  4, 2),
+  (1, 'SKU-C', 12, 2);
+
+REFRESH STREAMING TABLE main.replace_using_demo.inventory_current;
+```
+
+``` sql
+SELECT * FROM main.replace_using_demo.inventory_current ORDER BY warehouse_id, sku;
+```
+
+``` text
+warehouse_id  sku     on_hand  snapshot_seq
+------------  ------  -------  ------------
+1             SKU-A         4             2   <- replaced
+1             SKU-C        12             2   <- added
+2             SKU-A         7             1   <- untouched
+```
+
+Three things happened in one clause. `SKU-A` was replaced. `SKU-C` was inserted. `SKU-B` was deleted because warehouse 1's snapshot no longer lists it — you never wrote a `DELETE`, and you never derived one with an anti-join. Warehouse 2 was left alone because its key wasn't in the batch.
+
+### 4. Replay an Old Snapshot
+
+Now prove the sequencing. Send warehouse 1's original snapshot again, as an out-of-order replay would.
+
+``` sql
+-- Snapshot 1 arriving late.
+INSERT INTO main.replace_using_demo.inventory_snapshots VALUES
+  (1, 'SKU-A', 10, 1),
+  (1, 'SKU-B',  5, 1);
+
+REFRESH STREAMING TABLE main.replace_using_demo.inventory_current;
+
+SELECT * FROM main.replace_using_demo.inventory_current ORDER BY warehouse_id, sku;
+```
+
+The table is unchanged. Sequence 1 is lower than the sequence 2 already stored for warehouse 1, so the flow ignores it. `SKU-B` does not come back from the dead.
+
+### 5. Clean Up
+
+``` sql
+DROP SCHEMA main.replace_using_demo CASCADE;
+```
+
+## Choosing a Replace Flow
+
+Lakeflow now offers three flows that overwrite existing rows. Pick by what your source looks like.
+
+| Your source | Use | Needs a primary key |
+|---|---|---|
+| Partial snapshots keyed by column | `REPLACE USING` | No |
+| A CDC feed with explicit insert, update, and delete operations, or you need SCD Type 2 history | `AUTO CDC` | Yes |
+| A snapshot you want to recompute over a predicate, such as the last 7 days | `REPLACE WHERE` | No |
+
+If you are reaching for `MERGE INTO` to reconcile a snapshot, the answer is almost always `REPLACE USING`.
+
+## Rules to Follow
+
+**Pick a sequence that strictly increases per key version.** A timestamp, a version number, or a log offset. Two rows sharing a key *and* a sequence are both appended rather than replaced, which leaves duplicates for that key. In the Wanderbricks sample data, for instance, several updates to one booking share an `updated_at` timestamp, so you sequence by `booking_update_id` instead:
+
+``` sql
+CREATE OR REFRESH STREAMING TABLE bookings_current
+FLOW REPLACE USING (booking_id) SEQUENCE BY booking_update_id BY NAME
+SELECT booking_id, status, total_amount, booking_update_id
+FROM STREAM(samples.wanderbricks.booking_updates);
+```
+
+**Never let the sequence be null.** A null sequence leads to undefined behaviour.
+
+**Key on the grain the snapshot is authoritative for.** The key is not a row identifier, it is the unit the source replaces wholesale. Key too finely and you lose the free deletes. Use several columns when the grain is a combination: `REPLACE USING (property_id, booking_id)`. Nulls match nulls.
+
+**Drop expectations don't punch holes.** A row removed by a `drop` expectation is treated as if the source never produced it. It doesn't replace or delete the matching key, and it sets no sequence floor, so a later valid update still lands even if its sequence is lower.
+
+::: {.callout-warning title="One Flow Per Target" appearance="simple"}
+`REPLACE USING` supports a single flow per target table, and you can't combine it with another flow type on the same target. The source must be a streaming source, and key columns must be sortable — `MAP` and `VARIANT` can't be keys.
+:::
+
+## References & Further Reading
+
+-   [Partial snapshot replacement with REPLACE USING flows](https://learn.microsoft.com/en-us/azure/databricks/ldp/flows-replace-using)
+-   [REPLACE USING for standalone streaming tables](https://learn.microsoft.com/en-us/azure/databricks/ldp/dbsql/streaming#replace-using)
+-   [The AUTO CDC APIs](https://learn.microsoft.com/en-us/azure/databricks/ldp/cdc)
+-   [Batch processing with REPLACE WHERE flows](https://learn.microsoft.com/en-us/azure/databricks/ldp/flows-replace-where)
+-   [Wanderbricks sample dataset](https://learn.microsoft.com/en-us/azure/databricks/discover/wanderbricks-dataset)
+-   [August 2026 platform release notes](https://learn.microsoft.com/en-us/azure/databricks/release-notes/product/2026/august)
