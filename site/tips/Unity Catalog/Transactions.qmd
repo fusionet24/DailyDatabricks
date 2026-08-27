@@ -1,0 +1,218 @@
+---
+title: "Make multi-table writes all-or-nothing"
+description: "Transactions are GA on Unity Catalog managed tables. Wrap several statements in BEGIN ATOMIC ... END so they commit together or roll back together."
+date-modified: "27/08/2026"
+date-format: "DD/MM/YYYY"
+categories: [Unity Catalog, Delta, sql, transactions]
+toc: true
+toc-title: Navigation
+tags:
+    - databricks
+    - unity-catalog
+    - transactions
+    - delta
+    - sql
+    - tips
+draft: false
+---
+
+## Summary
+
+-   Wrap multiple SQL statements in `BEGIN ATOMIC ... END;` to commit them as one transaction.
+-   Every table you write to must be a Unity Catalog managed table with catalog commits enabled.
+-   A failure anywhere in the block rolls back the whole block. No partial writes reach the table.
+
+## The problem
+
+A pipeline that debits one table, credits another, and appends to an audit log runs three
+statements. Each one commits on its own. If the second statement fails, the first is already
+durable and the third never runs. The tables now disagree, and you repair them by hand.
+
+As of July 2026, transactions on Unity Catalog managed Delta tables are generally available.
+Group the statements and the lakehouse guarantees all or nothing.
+
+## Before you begin
+
+You need the following:
+
+-   A SQL warehouse, serverless compute, or a cluster running Databricks Runtime 18.0 or above.
+-   Unity Catalog managed tables with the `catalogManaged` table feature on every write target.
+-   Permission to create a schema and tables in a catalog. This guide uses `main`.
+
+## Create the tables
+
+Run the following statements outside a transaction. Transactions don't support DDL.
+
+Set `delta.feature.catalogManaged` at creation time. Catalog commits move commit coordination
+from the file system to Unity Catalog, which is what lets one commit span two tables.
+
+``` sql
+CREATE SCHEMA IF NOT EXISTS main.txn_demo;
+
+CREATE TABLE main.txn_demo.accounts (
+  account_id BIGINT,
+  owner      STRING,
+  balance    DECIMAL(12, 2)
+) TBLPROPERTIES ('delta.feature.catalogManaged' = 'supported');
+
+CREATE TABLE main.txn_demo.transfer_log (
+  from_account BIGINT,
+  to_account   BIGINT,
+  amount       DECIMAL(12, 2),
+  logged_at    TIMESTAMP
+) TBLPROPERTIES ('delta.feature.catalogManaged' = 'supported');
+```
+
+Add a constraint so the example has a rule to break, then seed two accounts:
+
+``` sql
+ALTER TABLE main.txn_demo.accounts
+  ADD CONSTRAINT positive_balance CHECK (balance >= 0);
+
+INSERT INTO main.txn_demo.accounts VALUES
+  (1, 'Ada',   500.00),
+  (2, 'Grace', 125.00);
+```
+
+To confirm that catalog commits are on, run `DESCRIBE DETAIL main.txn_demo.accounts` and look for
+`catalogManaged` in the `tableFeatures` column.
+
+::: {.callout-note title="Existing tables" appearance="simple"}
+To enable catalog commits on a table you already have, run
+`ALTER TABLE <table> SET TBLPROPERTIES ('delta.feature.catalogManaged' = 'supported')`. The
+statement syncs table state with the catalog, so it can take several minutes on a table with a
+long write history.
+:::
+
+## Move money in one commit
+
+The following transaction debits one account, credits another, and writes the audit row.
+All three statements commit together.
+
+``` sql
+BEGIN ATOMIC
+  UPDATE main.txn_demo.accounts SET balance = balance - 100.00 WHERE account_id = 1;
+  UPDATE main.txn_demo.accounts SET balance = balance + 100.00 WHERE account_id = 2;
+  INSERT INTO main.txn_demo.transfer_log
+    VALUES (1, 2, 100.00, current_timestamp());
+END;
+```
+
+Check the result:
+
+``` sql
+SELECT account_id, owner, balance FROM main.txn_demo.accounts ORDER BY account_id;
+```
+
+``` text
+account_id  owner   balance
+----------  ------  -------
+1           Ada     400.00
+2           Grace   225.00
+```
+
+## Watch it roll back
+
+Now run a transfer that Grace can't cover. The audit row and the credit come first and both
+succeed. The debit is last, and it violates `positive_balance`.
+
+``` sql
+BEGIN ATOMIC
+  INSERT INTO main.txn_demo.transfer_log
+    VALUES (2, 1, 5000.00, current_timestamp());
+  UPDATE main.txn_demo.accounts SET balance = balance + 5000.00 WHERE account_id = 1;
+  UPDATE main.txn_demo.accounts SET balance = balance - 5000.00 WHERE account_id = 2;
+END;
+```
+
+The statement fails with `DELTA_VIOLATE_CONSTRAINT_WITH_VALUES`. Verify that the two successful
+statements were undone as well:
+
+``` sql
+SELECT
+  (SELECT balance FROM main.txn_demo.accounts WHERE account_id = 1) AS ada,
+  (SELECT count(*) FROM main.txn_demo.transfer_log)                 AS log_rows;
+```
+
+``` text
+ada     log_rows
+------  --------
+400.00  1
+```
+
+Ada's balance is untouched and the log still holds one row. Without the transaction, you would be
+holding a phantom `5000.00` credit and an audit entry for a transfer that never happened.
+
+## Fail fast instead
+
+The rollback above does the right thing, but it does the work first and discards it. Validate up
+front with [`SIGNAL`](https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/control-flow/signal-stmt),
+which raises an error and triggers the same automatic rollback:
+
+``` sql
+BEGIN ATOMIC
+  IF (SELECT balance FROM main.txn_demo.accounts WHERE account_id = 2) < 5000.00 THEN
+    SIGNAL SQLSTATE '75001'
+      SET MESSAGE_TEXT = 'Insufficient funds in account 2.';
+  END IF;
+
+  UPDATE main.txn_demo.accounts SET balance = balance - 5000.00 WHERE account_id = 2;
+  UPDATE main.txn_demo.accounts SET balance = balance + 5000.00 WHERE account_id = 1;
+END;
+```
+
+## Choose a mode
+
+| Mode | Syntax | Commit and rollback | Conflict detection | Use it for |
+|---|---|---|---|---|
+| Non-interactive | `BEGIN ATOMIC ... END;` | Automatic | Row level | Jobs, pipelines, stored procedures |
+| Interactive | `BEGIN TRANSACTION; ... COMMIT;` | Manual, with `ROLLBACK` | Table level | JDBC, ODBC, and Python clients that drive commits themselves |
+
+Prefer `BEGIN ATOMIC`. It detects conflicts at the row level, so two transactions can write
+different rows of the same file without colliding, and it can't leave a session holding an open
+transaction.
+
+Reach for interactive transactions when a client outside SQL decides whether to commit. Start
+those sessions with a `ROLLBACK` to clear any leftover state, and note that they roll back after
+10 minutes of inactivity.
+
+## Behaviour to plan for
+
+**Reads are repeatable.** The first time a transaction touches a table, it pins a snapshot. Every
+later read of that table in the same transaction sees that snapshot, even if someone else commits
+to it meanwhile.
+
+**Commits are optimistic.** Nothing locks. Conflicts surface at commit time, and the loser fails.
+Retry failed transactions against fresh data rather than assuming they'll succeed.
+
+**One transaction is one Delta log entry.** However many statements ran, the table history shows a
+single commit, with the individual operations as JSON metadata. Auditing and rollback stay simple.
+
+## Limits worth knowing
+
+-   No DDL. Run `CREATE`, `ALTER`, and `DROP` outside the transaction.
+-   No time travel, no `SHOW TABLES`, and no queries against system tables inside a transaction.
+-   No path-based access. Selecting straight from a storage path fails with `PATH_BASED_ACCESS`. To
+    read a non-transactional source, register it as a table and add the
+    `WITH (allow_nontransactional_read = true)` hint.
+-   Up to 100 tables written or read, and up to 100 views read, per transaction.
+-   Every transaction rolls back after 48 hours.
+
+::: {.callout-important title="Iceberg" appearance="simple"}
+Transactions that write to Unity Catalog managed Iceberg tables are still in Private Preview.
+Managed Delta tables are GA.
+:::
+
+## Clean up
+
+``` sql
+DROP SCHEMA main.txn_demo CASCADE;
+```
+
+## References & Further Reading
+
+-   [Transactions](https://learn.microsoft.com/en-us/azure/databricks/transactions/)
+-   [Transaction modes](https://learn.microsoft.com/en-us/azure/databricks/transactions/transaction-modes)
+-   [Catalog commits](https://learn.microsoft.com/en-us/azure/databricks/tables/features/catalog-commits)
+-   [ATOMIC compound statement](https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/sql-ref-syntax-txn-begin-atomic)
+-   [July 2026 platform release notes](https://learn.microsoft.com/en-us/azure/databricks/release-notes/product/2026/july)
