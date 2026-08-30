@@ -20,7 +20,7 @@ draft: false
 ## Summary
 
 -   `ALTER TABLE ... REPLACE PARTITIONED BY WITH CLUSTER BY` converts a partitioned Delta table to liquid clustering in place.
--   The conversion is a metadata operation, so readers and writers keep working while it runs.
+-   The conversion rewrites metadata, not data: readers keep working on every runtime, and writers keep working on Databricks Runtime 15.4 LTS and above.
 -   Generally available since June 2026, on Databricks Runtime 18.1 and above.
 
 ## The cost of a partition key you chose two years ago
@@ -97,7 +97,7 @@ OPTIMIZE main.default.events FULL;
 
 Run `FULL` once, after the conversion. Later runs of plain `OPTIMIZE` are incremental and rewrite only new data.
 
-::: {.callout-tip title="Skip this step on managed tables" appearance="simple"}
+::: {.callout-tip title="Skip this step with predictive optimization" appearance="simple"}
 If [predictive optimization](https://learn.microsoft.com/en-us/azure/databricks/optimizations/predictive-optimization) is enabled, Databricks runs `OPTIMIZE` for you. Drop any scheduled `OPTIMIZE` job you were running against the table.
 :::
 
@@ -107,7 +107,7 @@ If [predictive optimization](https://learn.microsoft.com/en-us/azure/databricks/
 DESCRIBE DETAIL main.default.events;
 ```
 
-`partitionColumns` is now empty and `clusteringColumns` returns `[["event_date"], ["customer_id"]]`.
+`partitionColumns` is now empty and `clusteringColumns` returns `["event_date", "customer_id"]`.
 
 The commit history records exactly what happened:
 
