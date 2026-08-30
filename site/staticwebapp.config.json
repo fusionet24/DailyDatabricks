@@ -9,6 +9,11 @@
       "route": "/s/dml-privileges",
       "redirect": "/tips/Unity Catalog/FineGrainedDMLPrivileges.html",
       "statusCode": 301
+    },
+    {
+      "route": "/s/liquid-clustering",
+      "redirect": "/tips/Delta/PartitionedToLiquidClustering.html",
+      "statusCode": 301
     }
   ],
   "globalHeaders": {

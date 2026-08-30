@@ -1,0 +1,173 @@
+---
+title: "Convert a Partitioned Table to Liquid Clustering in One Statement"
+description: "ALTER TABLE ... REPLACE PARTITIONED BY WITH CLUSTER BY converts an over-partitioned Delta table to liquid clustering in place, without a CTAS rewrite and without taking the table offline."
+date-modified: "30/08/2026"
+date-format: "DD/MM/YYYY"
+categories: [Delta, Performance, SQL]
+toc: true
+toc-title: Navigation
+tags:
+    - databricks
+    - deltalake
+    - liquid-clustering
+    - partitioning
+    - performance
+    - sql
+    - tips
+draft: false
+---
+
+## Summary
+
+-   `ALTER TABLE ... REPLACE PARTITIONED BY WITH CLUSTER BY` converts a partitioned Delta table to liquid clustering in place.
+-   The conversion rewrites metadata, not data: readers keep working on every runtime, and writers keep working on Databricks Runtime 15.4 LTS and above.
+-   Generally available since June 2026, on Databricks Runtime 18.1 and above.
+
+## The cost of a partition key you chose two years ago
+
+Hive-style partitioning locks a table's physical layout to the columns you picked when you created it. Pick a key that is too granular and you get thousands of small files that slow every scan. Pick one that is too coarse and data skipping stops helping. Either way, the column is baked into the directory structure.
+
+Until now, changing it meant a full `CREATE TABLE AS SELECT` rewrite: double the storage, a maintenance window, and a table swap that invalidates every downstream reader.
+
+As of June 2026, one statement does it:
+
+``` sql
+ALTER TABLE <table_name>
+REPLACE PARTITIONED BY WITH CLUSTER BY [( <clustering_columns> ) | AUTO]
+```
+
+## Convert a table
+
+The following example builds an over-partitioned table, converts it, and confirms the result. Run it on Databricks Runtime 18.1 or above.
+
+### Step 1: Create a partitioned table
+
+Two million rows spread across 180 daily partitions — roughly 11,000 rows per directory, which is far too little data per file to scan efficiently.
+
+``` sql
+CREATE OR REPLACE TABLE main.default.events (
+  event_id    BIGINT,
+  customer_id BIGINT,
+  event_type  STRING,
+  event_date  DATE,
+  amount      DECIMAL(10, 2)
+)
+PARTITIONED BY (event_date);
+
+INSERT INTO main.default.events
+SELECT
+  id                                   AS event_id,
+  id % 5000                            AS customer_id,
+  CASE CAST(id % 3 AS INT)
+    WHEN 0 THEN 'view'
+    WHEN 1 THEN 'click'
+    ELSE 'purchase'
+  END                                  AS event_type,
+  DATE '2026-01-01' + CAST(id % 180 AS INT) AS event_date,
+  CAST(id % 400 AS DECIMAL(10, 2))     AS amount
+FROM range(2000000);
+```
+
+Confirm the starting layout:
+
+``` sql
+DESCRIBE DETAIL main.default.events;
+```
+
+`partitionColumns` returns `["event_date"]` and `clusteringColumns` is empty.
+
+### Step 2: Convert
+
+Most queries against this table filter on both a date and a customer, so cluster on both:
+
+``` sql
+ALTER TABLE main.default.events
+REPLACE PARTITIONED BY WITH CLUSTER BY (event_date, customer_id);
+```
+
+The statement returns in seconds. It rewrites table metadata and upgrades the table protocol; it does not rewrite your data files.
+
+### Step 3: Apply the new layout
+
+Clustering keys describe the target layout. `OPTIMIZE ... FULL` reorganizes the existing files to match it:
+
+``` sql
+OPTIMIZE main.default.events FULL;
+```
+
+Run `FULL` once, after the conversion. Later runs of plain `OPTIMIZE` are incremental and rewrite only new data.
+
+::: {.callout-tip title="Skip this step with predictive optimization" appearance="simple"}
+If [predictive optimization](https://learn.microsoft.com/en-us/azure/databricks/optimizations/predictive-optimization) is enabled, Databricks runs `OPTIMIZE` for you. Drop any scheduled `OPTIMIZE` job you were running against the table.
+:::
+
+### Step 4: Verify
+
+``` sql
+DESCRIBE DETAIL main.default.events;
+```
+
+`partitionColumns` is now empty and `clusteringColumns` returns `["event_date", "customer_id"]`.
+
+The commit history records exactly what happened:
+
+``` sql
+DESCRIBE HISTORY main.default.events;
+```
+
+Look for a series of `REORG` operations, an `UPGRADE PROTOCOL` operation, and a `REPLACE PARTITIONED BY WITH CLUSTER BY` operation.
+
+Data skipping now works on both keys, not just the partition column:
+
+``` sql
+SELECT SUM(amount)
+FROM main.default.events
+WHERE event_date = DATE '2026-03-15'
+  AND customer_id = 42;
+```
+
+## Choose the clustering keys
+
+The `CLUSTER BY` clause takes three forms.
+
+| Form | Behavior | Use it when |
+|---|---|---|
+| `CLUSTER BY (col, ...)` | Clusters on the columns you name, up to four. | You know your filter columns and want to add or drop one during the move. |
+| `CLUSTER BY AUTO` | Starts from the current partition columns, then lets predictive optimization adapt the keys over time. Unity Catalog managed tables only. | Query patterns change, or you would rather not choose. |
+| `CLUSTER BY` | Keeps the current partition columns as clustering keys. | You want the same keys with a better layout. |
+
+Keep the new keys close to the old partition columns. Naming completely different columns is valid, but the first `OPTIMIZE ... FULL` then has to recluster the entire table.
+
+## Convert a table partitioned by a timestamp
+
+Statistics auto-generation does not support `TIMESTAMP` clustering keys, so a table partitioned by a timestamp column needs three statements instead of one:
+
+``` sql
+SET spark.databricks.delta.liquidConversion.statsGeneration.enabled = false;
+
+ALTER TABLE main.default.events_ts
+REPLACE PARTITIONED BY WITH CLUSTER BY (event_ts, customer_id);
+
+ANALYZE TABLE main.default.events_ts COMPUTE DELTA STATISTICS;
+```
+
+Without the config, the command fails with `SQLSTATE 42000` and reports the unsupported type.
+
+## Before you run it in production
+
+::: {.callout-warning title="The conversion is one-way" appearance="simple"}
+There is no rollback. To return to a partitioned layout, you have to recreate the table with a CTAS statement.
+:::
+
+-   **Runtime**: the command requires Databricks Runtime 18.1 or above. After conversion, Databricks Runtime 13.3 LTS and above can read and write the table.
+-   **Concurrent batch writes**: no downtime on Databricks Runtime 15.4 LTS and above. Pause writers on 15.3 and below.
+-   **Concurrent streaming reads**: streams with schema tracking and column mapping restart cleanly. Without them, the stream raises an exception and needs a new checkpoint location and start version. No commits are lost either way.
+-   **Managed Iceberg tables**: the command raises an error, and it is unnecessary — Unity Catalog already treats Iceberg partition definitions as clustering keys.
+-   **Not supported**: streaming tables and materialized views defined in Lakeflow pipelines (change `PARTITIONED BY` to `CLUSTER BY` in the pipeline definition instead), and tables shared through OpenSharing with partition filtering.
+
+## Further reading
+
+-   [Convert a partitioned table to liquid clustering](https://learn.microsoft.com/en-us/azure/databricks/tables/clustering#convert-partitioned)
+-   [Use liquid clustering for tables](https://learn.microsoft.com/en-us/azure/databricks/tables/clustering)
+-   [Predictive optimization for Unity Catalog managed tables](https://learn.microsoft.com/en-us/azure/databricks/optimizations/predictive-optimization)
+-   [June 2026 release notes](https://learn.microsoft.com/en-us/azure/databricks/release-notes/product/2026/june)
