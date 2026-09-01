@@ -7,13 +7,13 @@ const statements = [
   {
     sql: "UPDATE accounts SET balance = balance - 100 WHERE id = 1;",
     status: "COMMITTED",
-    note: "Ada is debited. Durable, on disk, irreversible.",
+    note: "Account 1 is debited. Durable, on disk, irreversible.",
     ok: true,
   },
   {
     sql: "UPDATE accounts SET balance = balance + 100 WHERE id = 2;",
     status: "FAILED",
-    note: "Grace never gets the money.",
+    note: "Account 2 never receives it.",
     ok: false,
   },
   {
@@ -78,7 +78,7 @@ export const Slide2_Problem: React.FC = () => {
             textAlign: "center",
           }}
         >
-          THREE STATEMENTS, THREE SEPARATE COMMITS
+          PROBLEM: 3 STATEMENTS, 3 SEPARATE COMMITS
         </h2>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -175,7 +175,7 @@ export const Slide2_Problem: React.FC = () => {
             gap: 20,
           }}
         >
-          <span style={{ fontSize: 34, lineHeight: 1 }}>{"\u{1F4B8}"}</span>
+          <span style={{ fontSize: 34, lineHeight: 1 }}>{"\u{1F517}"}</span>
           <span
             style={{
               color: CAROUSEL_COLORS.textWhite,
@@ -185,8 +185,8 @@ export const Slide2_Problem: React.FC = () => {
               lineHeight: 1.35,
             }}
           >
-            &pound;100 left one account and reached nobody. Your tables now
-            disagree, and you repair them by hand.
+            3 commits with different outcomes but all part of the same
+            business transaction, so they should be coupled outcomes.
           </span>
         </div>
       </div>

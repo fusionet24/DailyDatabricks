@@ -166,7 +166,7 @@ export const Slide4_Rollback: React.FC = () => {
         <div style={{ marginTop: 22, display: "flex", gap: 16 }}>
           {[
             {
-              label: "ADA'S BALANCE",
+              label: "ACCOUNT 1 BALANCE",
               value: "400.00",
               note: "Credit undone",
             },
