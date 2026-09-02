@@ -1,0 +1,267 @@
+name: LinkedIn Post
+
+# Publishes a carousel PDF to the DailyDatabricks LinkedIn page.
+#
+# The copy is reviewed and approved as part of the pull request: every
+# social/<slug>/LinkedIn.md touched by a PR is validated on each push, so the
+# reviewer approves something already known to be publishable. When that PR is
+# merged with the `linkedin` label, the same manifest is posted.
+#
+# See social/README.md for the manifest format and the one-time app setup.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled, closed]
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      manifest:
+        description: 'Manifest to publish, e.g. social/transactions/LinkedIn.md'
+        required: true
+        type: string
+      dry_run:
+        description: 'Resolve and print the post without sending it'
+        type: boolean
+        default: true
+
+# One post at a time, and never cancel a run that may already have published.
+concurrency:
+  group: linkedin-post
+  cancel-in-progress: false
+
+env:
+  POST_LABEL: linkedin
+
+jobs:
+  # Runs while the PR is open: proves the manifest, its PDF, its post and the
+  # resolved URL are all publishable before anyone approves the copy.
+  validate:
+    if: github.event_name == 'pull_request' && github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find LinkedIn manifests changed by this PR
+        id: changed
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          MANIFESTS=$(git diff --name-only --diff-filter=ACMR "$BASE_SHA" HEAD \
+            | grep -E '^social/.+/LinkedIn\.md$' \
+            | grep -v '^social/TEMPLATE/' || true)
+          {
+            echo "manifests<<EOF"
+            echo "$MANIFESTS"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          if [ -z "$MANIFESTS" ]; then
+            echo "No LinkedIn manifests changed by this PR." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: actions/setup-python@v5
+        if: steps.changed.outputs.manifests != ''
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        if: steps.changed.outputs.manifests != ''
+        run: pip install pyyaml
+
+      - name: Validate manifests
+        if: steps.changed.outputs.manifests != ''
+        env:
+          MANIFESTS: ${{ steps.changed.outputs.manifests }}
+        run: |
+          set -euo pipefail
+          {
+            echo '## LinkedIn post preview'
+            echo
+            echo "Approving this PR approves the copy below. Add the \`$POST_LABEL\`"
+            echo 'label to publish it to the DailyDatabricks page when the PR merges.'
+            echo
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          while IFS= read -r MANIFEST; do
+            [ -n "$MANIFEST" ] || continue
+            python scripts/linkedin_post.py validate "$MANIFEST" | tee -a "$GITHUB_STEP_SUMMARY"
+          done <<< "$MANIFESTS"
+
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Warn when the label is set but no manifest changed
+        if: >-
+          steps.changed.outputs.manifests == '' &&
+          contains(github.event.pull_request.labels.*.name, 'linkedin')
+        run: |
+          echo "::warning::This PR is labelled '$POST_LABEL' but changes no" \
+               "social/<slug>/LinkedIn.md, so merging it will not post anything."
+
+  # Runs once the PR is merged with the label: publishes each manifest the PR
+  # added or changed.
+  post:
+    if: >-
+      (github.event_name == 'pull_request' &&
+       github.event.action == 'closed' &&
+       github.event.pull_request.merged == true &&
+       contains(github.event.pull_request.labels.*.name, 'linkedin')) ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install pyyaml
+
+      - name: Resolve manifests to publish
+        id: resolve
+        env:
+          DISPATCH_MANIFEST: ${{ inputs.manifest }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            MANIFESTS="$DISPATCH_MANIFEST"
+          else
+            MANIFESTS=$(git diff --name-only --diff-filter=ACMR "$BASE_SHA" "$MERGE_SHA" \
+              | grep -E '^social/.+/LinkedIn\.md$' \
+              | grep -v '^social/TEMPLATE/' || true)
+          fi
+          {
+            echo "manifests<<EOF"
+            echo "$MANIFESTS"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Publish to LinkedIn
+        if: steps.resolve.outputs.manifests != ''
+        id: publish
+        env:
+          LINKEDIN_CLIENT_ID: ${{ secrets.LINKEDIN_CLIENT_ID }}
+          LINKEDIN_CLIENT_SECRET: ${{ secrets.LINKEDIN_CLIENT_SECRET }}
+          LINKEDIN_REFRESH_TOKEN: ${{ secrets.LINKEDIN_REFRESH_TOKEN }}
+          LINKEDIN_ORGANIZATION_ID: ${{ secrets.LINKEDIN_ORGANIZATION_ID }}
+          LINKEDIN_API_VERSION: ${{ vars.LINKEDIN_API_VERSION }}
+          SITE_BASE_URL: ${{ vars.SITE_BASE_URL }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+          MANIFESTS: ${{ steps.resolve.outputs.manifests }}
+        run: |
+          set -euo pipefail
+          RECEIPTS="$RUNNER_TEMP/receipts.txt"
+          : > "$RECEIPTS"
+
+          # Report what was published even if a later manifest fails — without
+          # this, a partial failure would leave the receipt uncommitted and a
+          # re-run would post the same carousel again.
+          report_receipts() {
+            {
+              echo "receipts<<RECEIPTS_EOF"
+              cat "$RECEIPTS"
+              echo "RECEIPTS_EOF"
+            } >> "$GITHUB_OUTPUT"
+          }
+          trap report_receipts EXIT
+
+          while IFS= read -r MANIFEST; do
+            [ -n "$MANIFEST" ] || continue
+            RECEIPT="$(dirname "$MANIFEST")/posted.json"
+
+            # A receipt means this manifest has already gone out. Re-running the
+            # workflow must not publish the same carousel a second time.
+            if [ -f "$RECEIPT" ]; then
+              echo "::notice::$MANIFEST was already published (see $RECEIPT), skipping."
+              continue
+            fi
+
+            if [ "$DRY_RUN" = "true" ]; then
+              python scripts/linkedin_post.py post "$MANIFEST" --dry-run
+            else
+              python scripts/linkedin_post.py post "$MANIFEST" --output "$RECEIPT"
+              echo "$RECEIPT" >> "$RECEIPTS"
+            fi
+          done <<< "$MANIFESTS"
+
+      - name: Summarise and commit the receipts
+        if: always() && steps.publish.outputs.receipts != ''
+        env:
+          RECEIPTS: ${{ steps.publish.outputs.receipts }}
+        run: |
+          set -euo pipefail
+          {
+            echo '## Published to the DailyDatabricks LinkedIn page'
+            echo
+            while IFS= read -r RECEIPT; do
+              [ -n "$RECEIPT" ] || continue
+              python -c "import json,sys; r=json.load(open(sys.argv[1])); print(f\"- [{r['article_url']}]({r['post_link']})\")" "$RECEIPT"
+            done <<< "$RECEIPTS"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          while IFS= read -r RECEIPT; do
+            [ -n "$RECEIPT" ] || continue
+            git add "$RECEIPT"
+          done <<< "$RECEIPTS"
+          git commit -m "chore(social): record LinkedIn post receipt [skip ci]"
+
+          # The site workflow may have pushed to main while we were posting.
+          for attempt in 1 2 3 4; do
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            sleep $((2 ** attempt))
+            git pull --rebase origin main
+          done
+          echo "::warning::Published successfully but could not push the receipt to main."
+
+      - name: Comment the post link on the pull request
+        if: >-
+          always() &&
+          steps.publish.outputs.receipts != '' &&
+          github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RECEIPTS: ${{ steps.publish.outputs.receipts }}
+          COMMENTS_URL: ${{ github.event.pull_request.comments_url }}
+        run: |
+          set -euo pipefail
+          python - <<'PY' > "$RUNNER_TEMP/comment.json"
+          import json, os
+
+          links = []
+          for receipt in os.environ["RECEIPTS"].splitlines():
+              if not receipt.strip():
+                  continue
+              with open(receipt.strip()) as handle:
+                  data = json.load(handle)
+              links.append(f"- {data['article_url']} -> {data['post_link']}")
+
+          body = (
+              "Published to the DailyDatabricks LinkedIn page:\n\n"
+              + "\n".join(links)
+              + "\n\n---\n_Generated by [Claude Code](https://claude.ai/code)_\n"
+          )
+          print(json.dumps({"body": body}))
+          PY
+
+          curl -sS -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/json" \
+            --data @"$RUNNER_TEMP/comment.json" \
+            "$COMMENTS_URL"
