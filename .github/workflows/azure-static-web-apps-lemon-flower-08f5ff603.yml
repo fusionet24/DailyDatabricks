@@ -24,6 +24,9 @@ on:
 jobs:
   render_site:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
     steps:
     - uses: actions/checkout@v4
     - name: Setup Quarto (latest stable release)
@@ -59,14 +62,54 @@ jobs:
         DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         DATABRICKS_CLUSTER_ID: ${{ secrets.DATABRICKS_CLUSTER_ID }}
     - name: render site
-      run: quarto render site/
+      id: render
+      # Keep the log so the steps below can turn Quarto's diagnostics into
+      # tickets. A failed render must still reach those steps, so the job is
+      # failed explicitly at the end rather than here.
+      continue-on-error: true
+      run: |
+        set -o pipefail
+        quarto render site/ 2>&1 | tee render.log
+    - name: Collect render diagnostics
+      run: |
+        python3 scripts/parse_render_log.py render.log \
+          ${{ steps.render.outcome == 'failure' && '--render-failed' || '' }} \
+          > render-findings.json
+        cat render-findings.json
+    - name: Ensure render issue labels exist
+      if: github.ref == 'refs/heads/main'
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        gh label create render-issue --force --color B60205 \
+          --description 'Raised automatically from a site render'
+        gh label create render-error --force --color D93F0B \
+          --description 'Render diagnostic: error'
+        gh label create render-warning --force --color FBCA04 \
+          --description 'Render diagnostic: warning'
+        gh label create automated --force --color C5DEF5 \
+          --description 'Opened by automation'
+    - name: Raise issues for render diagnostics
+      # Only the default branch files real tickets; every other ref reports
+      # what it would have filed, so branches cannot spam the tracker.
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        python3 scripts/report_render_issues.py render-findings.json \
+          ${{ github.ref == 'refs/heads/main' && '' || '--dry-run' }}
     - name: Output folder directories
       run: ls
     - name: Upload _site directory for deploy job
+      if: steps.render.outcome == 'success'
       uses: actions/upload-artifact@v4
       with:
           name: site_deployment
           path: site/_site
+    - name: Fail the job if the render failed
+      if: steps.render.outcome == 'failure'
+      run: |
+        echo "::error::quarto render failed - see the issues raised above"
+        exit 1
   deploy_to_azure_static_webapp:
     needs: render_site
     # github.ref (unlike github.event.ref) is populated for every event type, so
