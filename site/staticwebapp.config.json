@@ -9,6 +9,11 @@
       "route": "/s/dml-privileges",
       "redirect": "/tips/Unity Catalog/FineGrainedDMLPrivileges.html",
       "statusCode": 301
+    },
+    {
+      "route": "/s/transactions",
+      "redirect": "/tips/Unity Catalog/Transactions.html",
+      "statusCode": 301
     }
   ],
   "globalHeaders": {

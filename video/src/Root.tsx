@@ -12,6 +12,7 @@ import { TellRCarousel } from "./TellRCarousel";
 import { DeltaRSIntroCarousel } from "./DeltaRSIntroCarousel";
 import { DeltaRSCodeCarousel } from "./DeltaRSCodeCarousel";
 import { DeltaRSComparisonCarousel } from "./DeltaRSComparisonCarousel";
+import { TransactionsCarousel } from "./TransactionsCarousel";
 import { DeltaRSVideo } from "./DeltaRSVideo";
 import { LogoRevealVideo } from "./LogoRevealVideo";
 import { EndCardGenerator } from "./EndCardGenerator";
@@ -132,6 +133,14 @@ export const RemotionRoot: React.FC = () => {
       <Composition
         id="DeltaRSComparisonCarousel"
         component={DeltaRSComparisonCarousel}
+        durationInFrames={CAROUSEL_CONFIG.totalSlides}
+        fps={CAROUSEL_CONFIG.fps}
+        width={CAROUSEL_CONFIG.width}
+        height={CAROUSEL_CONFIG.height}
+      />
+      <Composition
+        id="TransactionsCarousel"
+        component={TransactionsCarousel}
         durationInFrames={CAROUSEL_CONFIG.totalSlides}
         fps={CAROUSEL_CONFIG.fps}
         width={CAROUSEL_CONFIG.width}
