@@ -7,6 +7,15 @@ on:
         description: 'Force re-render executable posts'
         type: boolean
         default: false
+      raise_issues:
+        description: 'File render diagnostics as issues (main does this anyway)'
+        type: boolean
+        default: false
+  schedule:
+    # Weekly deployment - Sunday 19:00 UTC (GitHub Actions cron is always UTC).
+    # Note: UTC does not observe daylight saving, so this lands at 20:00 UK time
+    # during BST and 19:00 during GMT.
+    - cron: '0 19 * * 0'
   push:
     branches:
       - main
@@ -19,14 +28,15 @@ on:
 jobs:
   render_site:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
     steps:
-    - uses: actions/checkout@v2
-    - name: Install GDebi first
-      run: sudo apt-get install gdebi-core
-    - name: Download the deb file
-      run: sudo curl -LO https://quarto.org/download/latest/quarto-linux-amd64.deb
-    - name: Install the deb file
-      run: sudo apt-get install -y ./quarto-linux-amd64.deb
+    - uses: actions/checkout@v4
+    - name: Setup Quarto (latest stable release)
+      uses: quarto-dev/quarto-actions/setup@v2
+      with:
+        version: release
     - name: Setup Python
       uses: actions/setup-python@v5
       with:
@@ -34,7 +44,9 @@ jobs:
     - name: Install Jupyter
       run: pip install jupyter
     - name: Verify Install
-      run: /usr/local/bin/quarto check
+      run: |
+        quarto --version
+        quarto check
     - name: Setup post venvs and re-render
       if: inputs.rerender == true
       run: |
@@ -54,17 +66,64 @@ jobs:
         DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         DATABRICKS_CLUSTER_ID: ${{ secrets.DATABRICKS_CLUSTER_ID }}
     - name: render site
-      run: quarto render site/
+      id: render
+      # Keep the log so the steps below can turn Quarto's diagnostics into
+      # tickets. A failed render must still reach those steps, so the job is
+      # failed explicitly at the end rather than here.
+      continue-on-error: true
+      run: |
+        set -o pipefail
+        quarto render site/ 2>&1 | tee render.log
+    - name: Collect render diagnostics
+      run: |
+        python3 scripts/parse_render_log.py render.log \
+          ${{ steps.render.outcome == 'failure' && '--render-failed' || '' }} \
+          > render-findings.json
+        cat render-findings.json
+    - name: Ensure render issue labels exist
+      if: github.ref == 'refs/heads/main' || inputs.raise_issues == true
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        gh label create render-issue --force --color B60205 \
+          --description 'Raised automatically from a site render'
+        gh label create render-error --force --color D93F0B \
+          --description 'Render diagnostic: error'
+        gh label create render-warning --force --color FBCA04 \
+          --description 'Render diagnostic: warning'
+        gh label create automated --force --color C5DEF5 \
+          --description 'Opened by automation'
+    - name: Raise issues for render diagnostics
+      # The default branch files real tickets, as does a dispatch that asks
+      # for them; every other ref only reports what it would have filed, so
+      # branches cannot spam the tracker.
+      #
+      # The condition is phrased negatively on purpose. GitHub's && and ||
+      # yield operands rather than booleans, and '' is falsy, so the natural
+      # reading -- cond && '' || '--dry-run' -- collapses to '--dry-run' on
+      # both branches. Keep the non-empty value out of the falsy slot.
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        DRY_RUN: ${{ (github.ref != 'refs/heads/main' && inputs.raise_issues != true) && '--dry-run' || '' }}
+      run: python3 scripts/report_render_issues.py render-findings.json $DRY_RUN
     - name: Output folder directories
       run: ls
     - name: Upload _site directory for deploy job
+      if: steps.render.outcome == 'success'
       uses: actions/upload-artifact@v4
       with:
           name: site_deployment
           path: site/_site
+    - name: Fail the job if the render failed
+      if: steps.render.outcome == 'failure'
+      run: |
+        echo "::error::quarto render failed - see the issues raised above"
+        exit 1
   deploy_to_azure_static_webapp:
     needs: render_site
-    if: success() && github.event.ref == 'refs/heads/main'
+    # github.ref (unlike github.event.ref) is populated for every event type, so
+    # scheduled and manually dispatched runs on main deploy as well as pushes.
+    if: success() && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     name: Deploy to Azure App Service
     steps:
