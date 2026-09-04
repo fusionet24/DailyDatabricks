@@ -7,6 +7,10 @@ on:
         description: 'Force re-render executable posts'
         type: boolean
         default: false
+      raise_issues:
+        description: 'File render diagnostics as issues (main does this anyway)'
+        type: boolean
+        default: false
   schedule:
     # Weekly deployment - Sunday 19:00 UTC (GitHub Actions cron is always UTC).
     # Note: UTC does not observe daylight saving, so this lands at 20:00 UK time
@@ -77,7 +81,7 @@ jobs:
           > render-findings.json
         cat render-findings.json
     - name: Ensure render issue labels exist
-      if: github.ref == 'refs/heads/main'
+      if: github.ref == 'refs/heads/main' || inputs.raise_issues == true
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
@@ -90,13 +94,18 @@ jobs:
         gh label create automated --force --color C5DEF5 \
           --description 'Opened by automation'
     - name: Raise issues for render diagnostics
-      # Only the default branch files real tickets; every other ref reports
-      # what it would have filed, so branches cannot spam the tracker.
+      # The default branch files real tickets, as does a dispatch that asks
+      # for them; every other ref only reports what it would have filed, so
+      # branches cannot spam the tracker.
+      #
+      # The condition is phrased negatively on purpose. GitHub's && and ||
+      # yield operands rather than booleans, and '' is falsy, so the natural
+      # reading -- cond && '' || '--dry-run' -- collapses to '--dry-run' on
+      # both branches. Keep the non-empty value out of the falsy slot.
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        python3 scripts/report_render_issues.py render-findings.json \
-          ${{ github.ref == 'refs/heads/main' && '' || '--dry-run' }}
+        DRY_RUN: ${{ (github.ref != 'refs/heads/main' && inputs.raise_issues != true) && '--dry-run' || '' }}
+      run: python3 scripts/report_render_issues.py render-findings.json $DRY_RUN
     - name: Output folder directories
       run: ls
     - name: Upload _site directory for deploy job
