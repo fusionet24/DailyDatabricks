@@ -1,0 +1,185 @@
+---
+title: "Group timestamps into buckets of any width"
+description: "The new time_bucket function rounds a timestamp down to a fixed-width window of your choosing, aligned to an origin you set. Use it when date_trunc's calendar units don't fit."
+date-modified: "11/09/2026"
+date-format: "DD/MM/YYYY"
+categories: [Data Engineering, sql, time-series]
+toc: true
+toc-title: Navigation
+tags:
+    - databricks
+    - sql
+    - time-series
+    - time-bucket
+    - date-trunc
+    - aggregation
+    - tips
+draft: false
+---
+
+## Summary
+
+-   `time_bucket(bucketSize, ts [, origin])` returns the start of the fixed-width window that `ts` falls into.
+-   Set `bucketSize` to any positive interval: 15 minutes, 90 seconds, 3 months. You are not limited to calendar units.
+-   Set `origin` to move the grid. Use it for windows that start at 5 past the hour, or for a fiscal year that begins in February.
+
+## The problem
+
+`date_trunc` rounds a timestamp down to a calendar unit: second, minute, hour, day, week,
+month, quarter, year. That covers reporting by month. It does not cover a 15-minute latency
+window, and there is no unit you can pass to get one.
+
+So you reach for arithmetic. You convert to an epoch, divide by 900, floor it, multiply
+back, and cast to a timestamp. The expression works, but it is unreadable, it silently
+breaks when someone changes the width, and it has no answer at all for a grid that starts
+somewhere other than midnight.
+
+As of September 2026, `time_bucket` does this in one call.
+
+## Before you begin
+
+You need a SQL warehouse, or compute running Databricks Runtime 19 or above.
+
+No setup, no tables. Every example below is a complete statement you can paste into a SQL
+editor and run.
+
+## Bucket events into 15-minute windows
+
+The following query groups six API requests into 15-minute windows and reports the worst
+latency in each.
+
+``` sql
+WITH requests AS (
+  SELECT * FROM VALUES
+    (TIMESTAMP '2026-09-08 09:02:11', 120),
+    (TIMESTAMP '2026-09-08 09:07:45', 310),
+    (TIMESTAMP '2026-09-08 09:14:59',  95),
+    (TIMESTAMP '2026-09-08 09:15:00', 880),
+    (TIMESTAMP '2026-09-08 09:22:30', 140),
+    (TIMESTAMP '2026-09-08 09:41:05', 205)
+    AS t(request_at, latency_ms)
+)
+SELECT
+  time_bucket(INTERVAL '15' MINUTE, request_at) AS window_start,
+  count(*)        AS requests,
+  max(latency_ms) AS worst_ms
+FROM requests
+GROUP BY ALL
+ORDER BY window_start;
+```
+
+``` text
+window_start         requests  worst_ms
+-------------------  --------  --------
+2026-09-08 09:00:00         3       310
+2026-09-08 09:15:00         2       880
+2026-09-08 09:30:00         1       205
+```
+
+Each bucket is half open: `[start, start + bucketSize)`. The event at exactly `09:15:00`
+opens the second window rather than closing the first, so no row is counted twice.
+
+The grid is anchored at `1970-01-01 00:00:00` by default, which puts the boundaries on
+`:00`, `:15`, `:30`, and `:45`.
+
+## Move the grid with an origin
+
+Default boundaries are rarely where your business day begins. Say an upstream job lands at
+5 past each hour, so a window that starts on the hour splits every batch in two.
+
+Pass a third argument to re-anchor the grid. Only the alignment matters, not the date:
+
+``` sql
+WITH requests AS (
+  SELECT * FROM VALUES
+    (TIMESTAMP '2026-09-08 09:02:11', 120),
+    (TIMESTAMP '2026-09-08 09:07:45', 310),
+    (TIMESTAMP '2026-09-08 09:14:59',  95),
+    (TIMESTAMP '2026-09-08 09:15:00', 880),
+    (TIMESTAMP '2026-09-08 09:22:30', 140),
+    (TIMESTAMP '2026-09-08 09:41:05', 205)
+    AS t(request_at, latency_ms)
+)
+SELECT
+  time_bucket(INTERVAL '15' MINUTE, request_at,
+              TIMESTAMP '1970-01-01 00:05:00') AS window_start,
+  count(*) AS requests
+FROM requests
+GROUP BY ALL
+ORDER BY window_start;
+```
+
+``` text
+window_start         requests
+-------------------  --------
+2026-09-08 08:50:00         1
+2026-09-08 09:05:00         3
+2026-09-08 09:20:00         1
+2026-09-08 09:35:00         1
+```
+
+The boundaries are now `:05`, `:20`, `:35`, and `:50`. The two events either side of
+`09:15:00`, which the default grid put in separate windows, now share one.
+
+## Bucket a fiscal quarter
+
+`origin` is just as useful on year-month intervals. A fiscal year that starts in February
+needs quarters beginning on 1 February, 1 May, 1 August, and 1 November. `date_trunc`
+cannot express that, because it only knows calendar quarters.
+
+``` sql
+SELECT
+  time_bucket(INTERVAL '3' MONTH, TIMESTAMP '2026-09-11 14:30:00',
+              TIMESTAMP '1970-02-01 00:00:00') AS fiscal_quarter,
+  date_trunc('quarter',            TIMESTAMP '2026-09-11 14:30:00') AS calendar_quarter;
+```
+
+``` text
+fiscal_quarter       calendar_quarter
+-------------------  -------------------
+2026-08-01 00:00:00  2026-07-01 00:00:00
+```
+
+Same timestamp, two different quarters. Reporting against the wrong one moves revenue
+between periods, so state the origin explicitly and keep it in one place.
+
+## Which function to use
+
+| You need | Use |
+|---|---|
+| A calendar unit: month, quarter, year, ISO week | `date_trunc` |
+| A width with no calendar unit: 15 minutes, 90 seconds, 5 days | `time_bucket` |
+| A grid that starts at an offset you choose | `time_bucket` |
+
+`time_bucket` with a default origin and a one-unit interval matches `date_trunc` for
+seconds, minutes, hours, days, and months. Prefer `date_trunc` there. It reads better, and
+it handles weeks, which start on a Monday rather than at the epoch.
+
+## Watch for
+
+**`bucketSize` and `origin` must be constants.** Both are folded at plan time. Reading
+either from a column fails with
+[`DATATYPE_MISMATCH.NON_FOLDABLE_INPUT`](https://learn.microsoft.com/en-us/azure/databricks/error-messages/datatype-mismatch-error-class#non_foldable_input).
+To bucket per tenant, branch with `CASE` over constant widths.
+
+**`bucketSize` must be positive.** `INTERVAL '0' SECOND` fails with
+`DATATYPE_MISMATCH.VALUE_OUT_OF_RANGE`.
+
+**`origin` may sit after `ts`.** The grid extends infinitely in both directions, so a 2027
+origin still buckets 2026 data correctly. Pick whichever anchor documents your intent.
+
+**Time zones differ by type.** `TIMESTAMP_NTZ` buckets in UTC. For `TIMESTAMP`, year-month
+intervals and the calendar-day part of day-time intervals align to the session time zone, so
+a daily bucket moves with `spark.sql.session.timeZone`. Set it in the job, not per query.
+
+**Short months clamp.** An origin on the 31st yields `2026-02-28` for a February bucket.
+Anchor monthly grids on a day that exists in every month.
+
+**`NULL` in, `NULL` out.** Any `NULL` argument returns `NULL`, including the interval.
+
+## References & Further Reading
+
+-   [`time_bucket` function](https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/functions/time_bucket)
+-   [`date_trunc` function](https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/functions/date_trunc)
+-   [`TIMESTAMP_NTZ` type](https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/data-types/timestamp-ntz-type)
+-   [September 2026 platform release notes](https://learn.microsoft.com/en-us/azure/databricks/release-notes/product/2026/september)
