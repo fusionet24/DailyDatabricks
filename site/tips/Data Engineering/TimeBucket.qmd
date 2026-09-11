@@ -157,10 +157,25 @@ it handles weeks, which start on a Monday rather than at the epoch.
 
 ## Watch for
 
-**`bucketSize` and `origin` must be constants.** Both are folded at plan time. Reading
-either from a column fails with
-[`DATATYPE_MISMATCH.NON_FOLDABLE_INPUT`](https://learn.microsoft.com/en-us/azure/databricks/error-messages/datatype-mismatch-error-class#non_foldable_input).
-To bucket per tenant, branch with `CASE` over constant widths.
+**`bucketSize` and `origin` must be constants.** Both are folded at plan time, so neither can
+come from a column. A `CASE` that chooses a width from a column is itself non-foldable, so moving
+the branch inside the argument fails with
+[`DATATYPE_MISMATCH.NON_FOLDABLE_INPUT`](https://learn.microsoft.com/en-us/azure/databricks/error-messages/datatype-mismatch-error-class#non_foldable_input)
+just the same. To vary the width per row, branch around the calls instead:
+
+``` sql
+-- Fails. The interval depends on a column, so it cannot be folded.
+SELECT time_bucket(CASE WHEN tier = 'premium' THEN INTERVAL '5' MINUTE
+                                              ELSE INTERVAL '1' HOUR END,
+                   event_at)
+FROM events;
+
+-- Works. The CASE picks between calls, and each interval is a literal.
+SELECT CASE WHEN tier = 'premium' THEN time_bucket(INTERVAL '5' MINUTE, event_at)
+                                  ELSE time_bucket(INTERVAL '1' HOUR,   event_at)
+       END AS window_start
+FROM events;
+```
 
 **`bucketSize` must be positive.** `INTERVAL '0' SECOND` fails with
 `DATATYPE_MISMATCH.VALUE_OUT_OF_RANGE`.
