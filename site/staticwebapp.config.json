@@ -14,6 +14,11 @@
       "route": "/s/transactions",
       "redirect": "/tips/Unity Catalog/Transactions.html",
       "statusCode": 301
+    },
+    {
+      "route": "/s/time-bucket",
+      "redirect": "/tips/Data Engineering/TimeBucket.html",
+      "statusCode": 301
     }
   ],
   "globalHeaders": {
