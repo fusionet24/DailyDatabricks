@@ -19,6 +19,11 @@
       "route": "/s/time-bucket",
       "redirect": "/tips/Data Engineering/TimeBucket.html",
       "statusCode": 301
+    },
+    {
+      "route": "/s/counter-diff",
+      "redirect": "/tips/Data Engineering/CounterDiff.html",
+      "statusCode": 301
     }
   ],
   "globalHeaders": {
