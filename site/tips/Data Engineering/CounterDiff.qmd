@@ -1,0 +1,194 @@
+---
+title: "Turn cumulative counters into deltas with counter_diff"
+description: "The new counter_diff window function converts ever-increasing counter readings into per-interval increments, and returns NULL instead of a nonsense negative when a counter resets."
+date-modified: "01/10/2026"
+date-format: "DD/MM/YYYY"
+categories: [Data Engineering, sql, time-series]
+toc: true
+toc-title: Navigation
+tags:
+    - databricks
+    - sql
+    - time-series
+    - counter-diff
+    - window-functions
+    - observability
+    - tips
+draft: false
+---
+
+## Summary
+
+-   `counter_diff(value [, start_time]) OVER (PARTITION BY ... ORDER BY ...)` returns how much a cumulative counter grew since the previous reading.
+-   When the counter resets, for example after a process restart, the result is `NULL`. You never get a negative delta.
+-   Pass `start_time` to catch resets that a drop in value alone cannot reveal.
+
+## The problem
+
+Most metrics systems export counters as running totals: bytes sent, requests served, rows
+written. The total only goes up, until the process restarts and it drops back to zero.
+
+To get "bytes sent this minute", you subtract the previous reading with `lag`. That works
+until the first restart. Then `value - lag(value)` goes sharply negative, your throughput
+chart dips below zero, and every `sum` built on it is wrong. A missed scrape is just as bad:
+`lag` returns `NULL`, so the next reading has nothing to subtract from and the increment is
+lost.
+
+As of September 2026, `counter_diff` handles both cases for you.
+
+## Before you begin
+
+You need a SQL warehouse, or compute running Databricks Runtime 19 or above.
+
+Every example below is a complete statement. Paste it into a SQL editor and run it. No tables
+are required.
+
+## Compare counter_diff with lag
+
+The following query reads a `bytes_sent` counter from two servers once a minute. `web-1`
+misses its 09:03 scrape. `web-2` restarts just before 09:02.
+
+``` sql
+WITH scrapes AS (
+  SELECT * FROM VALUES
+    ('web-1', TIMESTAMP '2026-09-14 09:00:00', 1200),
+    ('web-1', TIMESTAMP '2026-09-14 09:01:00', 1500),
+    ('web-1', TIMESTAMP '2026-09-14 09:02:00', 2100),
+    ('web-1', TIMESTAMP '2026-09-14 09:03:00', NULL),
+    ('web-1', TIMESTAMP '2026-09-14 09:04:00', 2600),
+    ('web-2', TIMESTAMP '2026-09-14 09:00:00',  800),
+    ('web-2', TIMESTAMP '2026-09-14 09:01:00',  950),
+    ('web-2', TIMESTAMP '2026-09-14 09:02:00',   40),
+    ('web-2', TIMESTAMP '2026-09-14 09:03:00',  310),
+    ('web-2', TIMESTAMP '2026-09-14 09:04:00',  520)
+    AS t(host, scraped_at, bytes_sent)
+)
+SELECT
+  host,
+  scraped_at,
+  bytes_sent,
+  bytes_sent - lag(bytes_sent) OVER w AS lag_delta,
+  counter_diff(bytes_sent)     OVER w AS delta
+FROM scrapes
+WINDOW w AS (PARTITION BY host ORDER BY scraped_at)
+ORDER BY host, scraped_at;
+```
+
+``` text
+host   scraped_at           bytes_sent  lag_delta  delta
+-----  -------------------  ----------  ---------  -----
+web-1  2026-09-14 09:00:00        1200       NULL   NULL
+web-1  2026-09-14 09:01:00        1500        300    300
+web-1  2026-09-14 09:02:00        2100        600    600
+web-1  2026-09-14 09:03:00        NULL       NULL   NULL
+web-1  2026-09-14 09:04:00        2600       NULL    500
+web-2  2026-09-14 09:00:00         800       NULL   NULL
+web-2  2026-09-14 09:01:00         950        150    150
+web-2  2026-09-14 09:02:00          40       -910   NULL
+web-2  2026-09-14 09:03:00         310        270    270
+web-2  2026-09-14 09:04:00         520        210    210
+```
+
+Two rows show the difference:
+
+-   **`web-1` at 09:04.** `counter_diff` skips the `NULL` reading and subtracts the last
+    known value, 2100. The 500 bytes are kept. `lag` returns `NULL` and loses them.
+-   **`web-2` at 09:02.** The value fell from 950 to 40, so `counter_diff` treats it as a
+    reset and returns `NULL`. `lag` reports -910 bytes.
+
+The first row in each partition is always `NULL`, because there is no earlier reading.
+
+Because resets produce `NULL` rather than a negative, you can aggregate the deltas directly.
+`sum` ignores `NULL`:
+
+``` sql
+SELECT host, sum(delta) AS bytes_sent
+FROM (
+  SELECT host, counter_diff(bytes_sent) OVER (PARTITION BY host ORDER BY scraped_at) AS delta
+  FROM VALUES
+    ('web-2', TIMESTAMP '2026-09-14 09:00:00',  800),
+    ('web-2', TIMESTAMP '2026-09-14 09:01:00',  950),
+    ('web-2', TIMESTAMP '2026-09-14 09:02:00',   40),
+    ('web-2', TIMESTAMP '2026-09-14 09:03:00',  310),
+    ('web-2', TIMESTAMP '2026-09-14 09:04:00',  520)
+    AS t(host, scraped_at, bytes_sent)
+)
+GROUP BY host;
+```
+
+``` text
+host   bytes_sent
+-----  ----------
+web-2         630
+```
+
+The `lag` version of the same query returns -280.
+
+## Catch resets the value cannot reveal
+
+`counter_diff` detects a reset when the value goes down. If a process restarts and its new
+counter climbs past the old reading before the next scrape, the value never goes down, and
+the reset is invisible.
+
+OpenTelemetry and most agents export a start time with each cumulative counter: the moment
+the counter last began at zero. Pass it as the second argument, and any change to it marks a
+reset:
+
+``` sql
+SELECT
+  scraped_at,
+  requests,
+  counter_diff(requests)                OVER w AS by_value,
+  counter_diff(requests, counter_start) OVER w AS by_start_time
+FROM VALUES
+  (TIMESTAMP '2026-09-14 09:00:00', TIMESTAMP '2026-09-14 08:00:00', 1000),
+  (TIMESTAMP '2026-09-14 09:01:00', TIMESTAMP '2026-09-14 08:00:00', 1500),
+  (TIMESTAMP '2026-09-14 09:03:00', TIMESTAMP '2026-09-14 09:02:30', 2000)
+  AS t(scraped_at, counter_start, requests)
+WINDOW w AS (ORDER BY scraped_at);
+```
+
+``` text
+scraped_at           requests  by_value  by_start_time
+-------------------  --------  --------  -------------
+2026-09-14 09:00:00      1000      NULL           NULL
+2026-09-14 09:01:00      1500       500            500
+2026-09-14 09:03:00      2000       500           NULL
+```
+
+The process restarted at 09:02:30 and served 2,000 requests in 30 seconds. Measured by value
+alone, it looks like 500 requests in two minutes. The start time exposes the reset.
+
+If your source provides a start time, always pass it.
+
+## Watch for
+
+**Always partition by the series key.** Every independent counter needs its own partition:
+the metric name plus each attribute that identifies the series, such as host or endpoint.
+If two series share a partition, every switch between them looks like a reset, and those
+deltas come back as `NULL`.
+
+**A reset drops the increment since the restart.** The reset row returns `NULL`, not the new
+reading. In the first example, the 40 bytes `web-2` sent after restarting are not counted.
+With frequent scrapes this is negligible. With hourly scrapes, it can be most of an hour.
+
+**Negative values raise an error.** A counter must never go below zero, so a negative input
+fails with `COUNTER_DIFF_NEGATIVE_COUNTER_VALUE`. Filter or fix such rows first.
+
+**`start_time` must not move backwards.** A `start_time` earlier than the previous row's
+fails with `COUNTER_DIFF_START_TIME_DECREASED`. This usually means late or duplicate
+readings. Deduplicate before you compute deltas.
+
+**`ORDER BY` is required.** Without it, the query fails with
+`WINDOW_FUNCTION_FRAME_NOT_ORDERED`.
+
+**Use it only on counters.** Gauges, such as memory in use or queue depth, go up and down by
+design. `counter_diff` reads every drop in a gauge as a reset. Use `lag` for gauges.
+
+## References & Further Reading
+
+-   [`counter_diff` analytic window function](https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/functions/counter_diff)
+-   [`lag` analytic window function](https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/functions/lag)
+-   [Window functions](https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/sql-ref-window-functions)
+-   [Group timestamps into buckets of any width](TimeBucket.qmd)
+-   [September 2026 platform release notes](https://learn.microsoft.com/en-us/azure/databricks/release-notes/product/2026/september)
