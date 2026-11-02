@@ -19,6 +19,11 @@
       "route": "/s/time-bucket",
       "redirect": "/tips/Data Engineering/TimeBucket.html",
       "statusCode": 301
+    },
+    {
+      "route": "/s/compute-policy",
+      "redirect": "/tips/Unity Catalog/ComputePolicyEnforcement.html",
+      "statusCode": 301
     }
   ],
   "globalHeaders": {

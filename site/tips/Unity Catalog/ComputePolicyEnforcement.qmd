@@ -1,0 +1,184 @@
+---
+title: "Enforce Unity Catalog compute with a compute policy"
+description: "Let users create their own compute while a policy keeps them on Unity Catalog access modes and supported runtimes. Plus the blocklist, default value, and existing-compute traps that let non-compliant clusters slip through."
+date-modified: "02/11/2026"
+date-format: "DD/MM/YYYY"
+categories: [Unity Catalog, governance, compute]
+toc: true
+toc-title: Navigation
+tags:
+    - databricks
+    - unity-catalog
+    - compute-policy
+    - governance
+    - access-mode
+    - databricks-runtime
+    - tips
+draft: false
+---
+
+## Summary
+
+-   A compute policy lets users create their own compute, but only within the rules you set.
+-   Allowlist `data_security_mode` so every new cluster uses a Unity Catalog access mode: Auto, Standard, or Dedicated.
+-   Don't block old runtimes one by one. Use an anchored `regex` that sets a minimum version, and new old versions can't slip past it.
+-   A policy governs new and edited compute only. Users with unrestricted cluster creation skip it, and existing clusters stay as they are until you enforce compliance.
+
+## The problem
+
+You want every cluster in the workspace to be Unity Catalog compute. That means no
+`No isolation shared` clusters and no runtimes too old to talk to Unity Catalog.
+
+You could take compute creation away from everyone and build clusters on request. That
+doesn't scale, and it makes the platform team a bottleneck for every notebook.
+
+Use a compute policy instead. Users still create their own compute, but the policy limits
+what they can pick. Anything outside the rules can't be created.
+
+## Before you begin
+
+-   You need the Premium plan and workspace admin rights.
+-   Create the policy in **Compute > Policies > Create policy**. Paste the JSON under
+    **Advanced options > Edit definition as JSON**.
+-   Grant the policy's `CAN_USE` permission to the groups that should create compute with it.
+
+## The starting point
+
+A common first draft has two rules. One allowlists the Unity Catalog access modes. The other
+blocklists the 10.4 LTS runtimes:
+
+``` json
+{
+  "data_security_mode": {
+    "type": "allowlist",
+    "values": [
+      "DATA_SECURITY_MODE_AUTO",
+      "DATA_SECURITY_MODE_DEDICATED",
+      "DATA_SECURITY_MODE_STANDARD"
+    ],
+    "defaultValue": "DATA_SECURITY_MODE_AUTO"
+  },
+  "spark_version": {
+    "type": "blocklist",
+    "values": [
+      "10.4.x-cpu-ml-scala2.12",
+      "10.4.x-gpu-ml-scala2.12",
+      "10.4.x-scala2.12"
+    ],
+    "defaultValue": "auto:latest-lts"
+  }
+}
+```
+
+The `data_security_mode` rule is sound. An allowlist names the only values a user can pick,
+so `NONE` and the legacy passthrough modes are gone.
+
+The `spark_version` rule has two gaps.
+
+**It blocks keys, not labels.** The runtime dropdown shows `10.4 LTS (Scala 2.12, Spark 3.2.1)`.
+The policy only sees the API key, `10.4.x-scala2.12`. If you paste the display names into a
+blocklist, the policy saves but blocks nothing. List the real keys with
+`databricks clusters spark-versions`.
+
+**It blocks exactly three strings.** The docs say a blocklist needs exact matches. Every
+runtime not on the list is allowed, including 9.1 LTS, 7.3 LTS, and any other 10.4 key, such
+as a Photon build. A blocklist of runtimes also gets out of date. Each time a version reaches
+end of support, someone has to remember to add it.
+
+## Set a floor, not a blocklist
+
+Flip the rule round. Say which runtimes are allowed, and let everything else fail:
+
+``` json
+{
+  "data_security_mode": {
+    "type": "allowlist",
+    "values": [
+      "DATA_SECURITY_MODE_AUTO",
+      "DATA_SECURITY_MODE_STANDARD",
+      "DATA_SECURITY_MODE_DEDICATED",
+      "USER_ISOLATION",
+      "SINGLE_USER"
+    ],
+    "defaultValue": "DATA_SECURITY_MODE_AUTO"
+  },
+  "spark_version": {
+    "type": "regex",
+    "pattern": "^(auto:.*|(1[5-9]|[2-9][0-9])\\..*)$",
+    "defaultValue": "auto:latest-lts"
+  }
+}
+```
+
+The regex accepts:
+
+| Value | Example | Why |
+|---|---|---|
+| `auto:` special values | `auto:latest-lts` | These always point at a supported runtime |
+| Major version 15 to 99 | `15.4.x-scala2.12`, `17.3.x-scala2.13` | Sets a floor at 15 that newer releases clear on their own |
+
+It rejects `14.3.x-scala2.12`, `10.4.x-photon-scala2.12`, and `9.1.x-scala2.12`. It does this
+without naming any of them.
+
+Why 15, not 14.3 LTS? 14.3 LTS goes out of support on 1 February 2027. A floor at 15 saves you
+editing the policy again in three months. Pick the floor that suits your estate. Raise it by
+changing one number.
+
+::: {.callout-tip title="Anchor the pattern" appearance="simple"}
+The docs say to anchor a regex at both ends. Without `^` and `$`, a pattern like
+`1[5-9]\..*` would also match inside other strings. Write the anchors yourself and the
+policy behaves the same whatever the engine does.
+:::
+
+The access mode allowlist also includes the legacy names. `USER_ISOLATION` is the old API
+name for Standard and `SINGLE_USER` is the old name for Dedicated. An allowlist is an exact
+string match. If you list only the new names, older Terraform modules and job definitions
+that still send `USER_ISOLATION` can fail the policy, even though they ask for the same mode.
+
+## Watch for
+
+**Auto is not always Standard.** Auto picks Standard unless the user selects an ML runtime,
+a GPU instance type, or a runtime below 14.3. Then it picks Dedicated. Both are Unity Catalog
+modes, so the policy is still met. But expect some clusters to be Dedicated when you
+expected Standard. To require Standard, fix it with `"type": "fixed"`.
+
+**Defaults are UI-only.** `defaultValue` fills in the create compute form. It isn't applied to
+compute created through the Clusters API unless the request sets
+`apply_policy_default_values: true`. The allowlist and regex still apply either way. API
+callers can't break the rules, but they don't get your defaults.
+
+**Unrestricted cluster creation skips the policy.** Users with the
+**Unrestricted cluster creation** entitlement see an **Unrestricted** policy and can build
+anything. Remove that entitlement from the `users` group, or the policy is only a suggestion.
+
+**Check Personal Compute too.** By default every user can use the **Personal Compute**
+policy. Your new policy doesn't close that route. Either restrict who can use Personal
+Compute, or override its family rules with the same `spark_version` floor.
+
+**Editing a policy doesn't fix existing clusters.** Clusters created before the change keep
+their old config. Open the policy and check the **Compliance** column, or run
+**Scan all resources for compliance**. Then use **Enforce all**. For all-purpose compute,
+**Enforce on next restart** applies the change without interrupting running work. Job
+compute is updated straight away.
+
+**Unpoliced clusters stay unpoliced.** A cluster created with no policy isn't touched by any
+of this. Use **Add compute to policy** from the policy page to bring it in. Any running
+cluster you select is restarted, and you can't skip the restart.
+
+**Deleting a policy freezes its clusters.** Clusters governed by a deleted policy keep
+running, but only users with unrestricted cluster creation can edit them. Clone and fix a
+policy rather than delete and recreate it.
+
+**Runtime 19 adds its own rules.** On Standard access mode in Runtime 19 and above, some
+Spark configuration keys are blocked, such as `spark.driver.extraJavaOptions` and
+`spark.executorEnv.*`. If your policy fixes one of them, clusters on Runtime 19 fail to
+create. Clean those keys out of the policy before you raise the floor.
+
+## References & Further Reading
+
+-   [Create and manage compute policies](https://learn.microsoft.com/en-us/azure/databricks/admin/clusters/policies)
+-   [Compute policy reference](https://learn.microsoft.com/en-us/azure/databricks/admin/clusters/policy-definition)
+-   [Access modes](https://learn.microsoft.com/en-us/azure/databricks/compute/configure#access-modes)
+-   [Standard compute requirements and limitations](https://learn.microsoft.com/en-us/azure/databricks/compute/standard-limitations)
+-   [Databricks Runtime release notes versions and compatibility](https://learn.microsoft.com/en-us/azure/databricks/release-notes/runtime/)
+-   [Default policies and policy families](https://learn.microsoft.com/en-us/azure/databricks/admin/clusters/policy-families)
